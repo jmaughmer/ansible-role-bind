@@ -1,0 +1,15 @@
+---
+# Shared by every scenario (inventory links in each molecule.yml).
+
+# Container IPs come from facts rather than being fixed: Podman's Molecule
+# driver can't pin a network's subnet, so addresses are whatever the
+# container network hands out. converge.yml and verify.yml gather facts on
+# every instance first so these resolve on any host.
+test_master_ip: "{{ hostvars['ns-master'].ansible_facts.default_ipv4.address }}"
+test_slave_ip: "{{ hostvars['ns-slave'].ansible_facts.default_ipv4.address }}"
+test_resolver_ip: "{{ hostvars['resolver'].ansible_facts.default_ipv4.address }}"
+
+# DS records land in Molecule's scratch directory, not the repository.
+bind_dnssec_ds_output_dir: "{{ lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}/dnssec-ds-records"
+# Containers can be slow to generate keys on a busy machine.
+bind_dnssec_key_wait_retries: 24

@@ -1,0 +1,26 @@
+---
+# One file, a list of a few related zones — here a domain and its reverse
+# zone kept together since they're always touched as a pair. Either shape
+# (bare dict or list) is fine in any file; tasks/load_zones.yml accepts
+# both, per-file.
+- name: customer-b.example
+  type: master
+  allow_transfer_acl: transfer_hosts
+  primary_ns: ns1.example.com
+  admin_email: hostmaster.example.com
+  nameservers:
+    - ns1.example.com
+    - ns2.example.com
+  records:
+    - { name: www, type: A, value: 10.0.5.10 }
+
+- name: 5.0.10.in-addr.arpa
+  type: master
+  allow_transfer_acl: transfer_hosts
+  primary_ns: ns1.example.com
+  admin_email: hostmaster.example.com
+  nameservers:
+    - ns1.example.com
+    - ns2.example.com
+  records:
+    - { name: "10", type: PTR, value: "www.customer-b.example." }

@@ -1,0 +1,8 @@
+---
+# Loaded through bind_zones_vars_dir on ns-master — one zone as a bare dict.
+name: customer.test
+type: master
+primary_ns: ns1.example.test
+nameservers: [ns1.example.test, ns2.example.test]
+records:
+  - { name: www, type: A, value: 10.153.53.30 }

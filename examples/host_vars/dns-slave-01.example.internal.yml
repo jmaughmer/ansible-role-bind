@@ -1,0 +1,25 @@
+---
+# Slave: pulls example.com from the master, serves answers, no local recursion.
+bind_dns_role: authoritative
+
+bind_acls:
+  trusted:
+    - 127.0.0.1
+    - ::1
+  transfer_hosts: []       # this slave doesn't re-serve transfers to anyone
+  recursion_clients: []
+  dns64_clients: []
+
+bind_zones:
+  - name: example.com
+    type: slave
+    masters:
+      - 10.0.1.10           # dns-master-01
+    # allow_transfer_acl omitted -> defaults to "none" (no third-party transfers)
+
+  # Reverse zone counterpart to the master's — same type: slave shape as
+  # any forward zone, pulled by AXFR/IXFR like example.com above.
+  - name: 1.0.10.in-addr.arpa
+    type: slave
+    masters:
+      - 10.0.1.10           # dns-master-01

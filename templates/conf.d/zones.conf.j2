@@ -1,0 +1,47 @@
+// {{ ansible_managed }}
+{% for zone in bind_zones %}
+zone "{{ zone.name }}" {
+    type {{ zone.type }};
+{% if zone.type == 'master' %}
+    file "{{ bind_zones_dir }}/{{ zone.file | default(zone.name + '.zone') }}";
+    allow-transfer { {{ zone.allow_transfer_acl | default(bind_allow_transfer_acl) }}; };
+{% if zone.notify is defined %}
+    notify {{ 'yes' if zone.notify else 'no' }};
+{% endif %}
+{% if zone.also_notify is defined and zone.also_notify | length > 0 %}
+    also-notify {
+{% for ip in zone.also_notify %}
+        {{ ip }};
+{% endfor %}
+    };
+{% endif %}
+{% if bind_dnssec_enable_signing and (zone.dnssec | default(false)) %}
+    dnssec-policy {{ zone.dnssec_policy | default(bind_dnssec_policy) }};
+    inline-signing yes;
+    key-directory "{{ bind_dnssec_keys_dir }}";
+{% elif bind_ixfr_from_differences %}
+    // Journal zone-file changes so secondaries get an IXFR, not a full AXFR.
+    ixfr-from-differences yes;
+{% endif %}
+{% elif zone.type == 'slave' %}
+    file "{{ bind_slave_zones_dir }}/{{ zone.file | default(zone.name + '.zone') }}";
+    masters {
+{% for ip in zone.masters %}
+        {{ ip }};
+{% endfor %}
+    };
+    allow-transfer { {{ zone.allow_transfer_acl | default('none') }}; };
+{% elif zone.type == 'forward' %}
+    forward {{ zone.forward_policy | default('only') }};
+    forwarders {
+{% for ip in zone.forwarders %}
+        {{ ip }};
+{% endfor %}
+    };
+{% endif %}
+{% if zone.zone_statistics is defined %}
+    zone-statistics {{ 'yes' if zone.zone_statistics else 'no' }};
+{% endif %}
+};
+
+{% endfor %}

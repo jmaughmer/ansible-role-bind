@@ -1,0 +1,183 @@
+---
+- name: Fail if bind_dns_role is not a recognized value
+  ansible.builtin.assert:
+    that:
+      - bind_dns_role in ['authoritative', 'recursive']
+    fail_msg: "bind_dns_role must be 'authoritative' or 'recursive', got '{{ bind_dns_role }}'"
+
+- name: Fail if recursion is enabled with a wide-open recursion or cache ACL
+  # Checks both allow-recursion and allow-query-cache, whether the setting
+  # names "any" (or 0.0.0.0/0, ::/0) directly or reaches it through ACLs
+  # nested inside other ACLs, however deep. Negated elements ("!name") are
+  # skipped: they exclude clients rather than allow them.
+  vars:
+    bind_open_acl_elements: ["any", "0.0.0.0/0", "::/0"]
+    bind_acl_is_open: >-
+      {%- set ns = namespace(frontier=[item], seen=[], next=[], open=false) -%}
+      {%- for _depth in range(16) -%}
+      {%-   set ns.seen = ns.seen + ns.frontier -%}
+      {%-   set ns.next = [] -%}
+      {%-   for acl_name in ns.frontier -%}
+      {%-     if acl_name in bind_open_acl_elements -%}{%- set ns.open = true -%}{%- endif -%}
+      {%-     for element in bind_acls[acl_name] | default([]) | map('string') | map('trim') -%}
+      {%-       if element in bind_open_acl_elements -%}{%- set ns.open = true -%}
+      {%-       elif element in bind_acls and element not in ns.seen -%}{%- set ns.next = ns.next + [element] -%}
+      {%-       endif -%}
+      {%-     endfor -%}
+      {%-   endfor -%}
+      {%-   set ns.frontier = ns.next -%}
+      {%- endfor -%}
+      {{ ns.open }}
+  ansible.builtin.assert:
+    that:
+      - not (bind_acl_is_open | bool)
+    fail_msg: >-
+      bind_recursion_enabled is true and '{{ item }}' (used for allow-recursion/allow-query-cache) allows
+      any client, directly or through a nested ACL. An open recursive resolver is a DDoS reflection risk —
+      scope it to known client networks.
+  loop: "{{ [bind_allow_recursion_acl, bind_allow_query_cache_acl] | unique }}"
+  when: bind_recursion_enabled
+
+- name: Fail if dnssec-policy signing is requested without a bind version that supports it
+  ansible.builtin.assert:
+    that:
+      - bind_dnssec_policy_supported
+    fail_msg: >-
+      bind_dnssec_enable_signing is true, but {{ ansible_facts['distribution'] }} {{ ansible_facts['distribution_major_version'] }}
+      isn't giving named a bind version that supports dnssec-policy (added upstream in BIND 9.16).
+      This should only happen if bind_use_bind9_16 was explicitly forced to false on RHEL 8 — leave it
+      at its default there (it auto-enables the bind9.16 AppStream package for exactly this case), or
+      set bind_dnssec_enable_signing: false and manage keys/signing manually with dnssec-keygen/dnssec-signzone.
+  when: bind_dnssec_enable_signing
+
+- name: Fail if bind_use_bind9_16 is set on a distro that doesn't need or ship it
+  ansible.builtin.assert:
+    that:
+      - ansible_facts['distribution_major_version'] | int == 8
+    fail_msg: >-
+      bind_use_bind9_16 is true, but this host is {{ ansible_facts['distribution'] }} {{ ansible_facts['distribution_major_version'] }}.
+      bind9.16 exists only to backport BIND 9.16 to RHEL 8, whose base 'bind' package is 9.11 — RHEL 9+
+      already ships BIND 9.16+ as the base 'bind' package. Leave bind_use_bind9_16 at its default (false) here.
+  when: bind_use_bind9_16
+
+- name: Fail if dnstap is enabled on a BIND version that can't rotate its output
+  ansible.builtin.assert:
+    that:
+      - bind_dnstap_rotation_supported
+    fail_msg: >-
+      bind_dnstap_enabled is true, but {{ ansible_facts['distribution'] }} {{ ansible_facts['distribution_major_version'] }}
+      is running BIND 9.11, whose dnstap-output has no size/versions rotation — the capture file would
+      grow until the disk fills. Set bind_use_bind9_16: true to move this host to BIND 9.16, or leave
+      bind_dnstap_enabled off.
+  when: bind_dnstap_enabled
+
+- name: Fail if a dnstap message type isn't one BIND recognizes
+  ansible.builtin.assert:
+    that:
+      - item is match('^(all|auth|client|forwarder|resolver)( (query|response))?$')
+    fail_msg: >-
+      bind_dnstap_types entry '{{ item }}' isn't valid — use all, auth, client, forwarder or resolver,
+      optionally followed by query or response (e.g. 'client response').
+  loop: "{{ bind_dnstap_types }}"
+  when: bind_dnstap_enabled
+
+- name: Fail if dnstap export is enabled without dnstap
+  ansible.builtin.assert:
+    that:
+      - bind_dnstap_enabled
+    fail_msg: >-
+      bind_dnstap_export_enabled is true but bind_dnstap_enabled is false — there's no dnstap capture
+      to export. Set bind_dnstap_enabled: true as well.
+  when: bind_dnstap_export_enabled
+
+- name: Fail if DNS64 is enabled without recursion
+  ansible.builtin.assert:
+    that:
+      - bind_recursion_enabled
+    fail_msg: "bind_dns64_enabled requires bind_recursion_enabled: true — DNS64 only applies to recursive resolution."
+  when: bind_dns64_enabled
+
+- name: Fail if the same zone name is defined more than once
+  # Across both bind_zones directly and everything bind_zones_dir loaded —
+  # load_zones.yml already merged both into bind_zones by this point, so
+  # this catches a collision regardless of which source(s) it came from.
+  # Easy to hit by accident once zones are spread across many files.
+  ansible.builtin.assert:
+    that:
+      - item.1 | length == 1
+    fail_msg: "Zone '{{ item.0 }}' is defined {{ item.1 | length }} times in bind_zones — remove the duplicate."
+  # map('list'): groupby yields tuples, which Ansible warns it can't store.
+  loop: "{{ bind_zones | groupby('name') | map('list') | list }}"
+  loop_control:
+    label: "{{ item.0 }}"
+
+- name: Fail if a slave zone is missing masters
+  ansible.builtin.assert:
+    that:
+      - item.masters is defined
+      - item.masters | length > 0
+    fail_msg: "Zone '{{ item.name }}' has type: slave but no masters list defined."
+  loop: "{{ bind_zones }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when: item.type == 'slave'
+
+- name: Fail if a master zone requests dnssec without signing enabled
+  ansible.builtin.assert:
+    that:
+      - bind_dnssec_enable_signing
+    fail_msg: >-
+      Zone '{{ item.name }}' sets dnssec: true but bind_dnssec_enable_signing is false.
+      Enable bind_dnssec_enable_signing (BIND 9.16+ / RHEL 9+ only) or drop dnssec from the zone.
+  loop: "{{ bind_zones }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when: item.type == 'master' and (item.dnssec | default(false))
+
+- name: Fail if a zone's dnssec-policy name isn't a BIND built-in or a defined custom policy
+  ansible.builtin.assert:
+    that:
+      - (item.dnssec_policy | default(bind_dnssec_policy)) in (['default', 'insecure', 'none'] + (bind_dnssec_policies.keys() | list))
+    fail_msg: >-
+      Zone '{{ item.name }}' resolves to dnssec-policy '{{ item.dnssec_policy | default(bind_dnssec_policy) }}',
+      which is neither a BIND built-in (default, insecure, none) nor a key in bind_dnssec_policies. Define
+      it there, or fix the typo.
+  loop: "{{ bind_zones }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when: item.type == 'master' and (item.dnssec | default(false))
+
+# item.value['keys'], not item.value.keys — dict.keys is a real Python
+# method, so dot access on a dict shadows a field actually named "keys".
+- name: Fail if a custom dnssec-policy uses an unrecognized key role
+  ansible.builtin.assert:
+    that:
+      - (item.value['keys'] | map(attribute='role') | reject('in', ['ksk', 'zsk', 'csk']) | list | length) == 0
+    fail_msg: >-
+      bind_dnssec_policies.{{ item.key }} has a key with a role that isn't ksk, zsk, or csk.
+  loop: "{{ bind_dnssec_policies | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+
+- name: Fail if a custom dnssec-policy defines no KSK or CSK
+  ansible.builtin.assert:
+    that:
+      - item.value['keys'] | selectattr('role', 'in', ['ksk', 'csk']) | list | length > 0
+    fail_msg: >-
+      bind_dnssec_policies.{{ item.key }} has no key with role ksk or csk — a policy needs at least
+      one to sign the DNSKEY RRset and produce a DS record for the parent zone.
+  loop: "{{ bind_dnssec_policies | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+
+- name: Fail if GeoIP ACL match elements are used without bind_geoip_enabled
+  ansible.builtin.assert:
+    that:
+      - bind_geoip_enabled
+    fail_msg: >-
+      bind_acls.{{ item.key }} contains a 'geoip' match element but bind_geoip_enabled is false;
+      named will refuse this config. Set bind_geoip_enabled: true and provide GeoIP2 databases.
+  loop: "{{ bind_acls | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+  when: item.value | select('search', '^geoip ') | list | length > 0

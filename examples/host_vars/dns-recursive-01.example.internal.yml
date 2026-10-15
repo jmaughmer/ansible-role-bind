@@ -1,0 +1,37 @@
+---
+# Dedicated caching resolver: no local zones, recursion for internal clients
+# only, DNS64 for the NAT64 client subnet, GeoIP-scoped recursion ACL, and
+# upstream forwarders with fall-through to full recursion.
+bind_dns_role: recursive
+# bind_recursion_enabled defaults to true automatically for bind_dns_role: recursive
+
+bind_acls:
+  trusted:
+    - 127.0.0.1
+    - ::1
+  transfer_hosts: []        # unused — this host hosts no zones
+  corp_geo:                 # requires bind_geoip_enabled: true
+    - "geoip country US"
+    - "geoip country CA"
+  recursion_clients:
+    - 10.0.0.0/8             # internal networks
+    - corp_geo                # ...plus anything matching the geo ACL above
+  dns64_clients:
+    - 10.0.0.0/8
+
+bind_forwarders:
+  - 8.8.8.8
+  - 1.1.1.1
+bind_forward_policy: first    # try forwarders first, fall back to full recursion
+
+bind_dns64_enabled: true
+bind_dns64_prefix: "64:ff9b::/96"
+bind_dns64_clients_acl: dns64_clients
+
+bind_geoip_enabled: true
+bind_geoipupdate_install: true
+bind_geoipupdate_account_id: "{{ vault_geoip_account_id }}"
+bind_geoipupdate_license_key: "{{ vault_geoip_license_key }}"
+bind_geoipupdate_run_now: true
+
+bind_zones: []

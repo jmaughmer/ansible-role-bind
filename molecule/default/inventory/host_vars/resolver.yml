@@ -1,0 +1,29 @@
+---
+# Caching resolver forwarding example.test to the primary, with DNS64,
+# tuning options and dnstap export.
+bind_dns_role: recursive
+# dnstap needs BIND 9.12+: on EL8 that means bind9.16.
+bind_use_bind9_16: "{{ ansible_facts['distribution_major_version'] | int == 8 }}"
+bind_acls:
+  trusted: [127.0.0.1, "::1"]
+  transfer_hosts: []
+  # The primary may recurse here; the secondary deliberately may not, so
+  # verify.yml can check that it's REFUSED.
+  recursion_clients: [127.0.0.0/8, "::1", "{{ test_master_ip }}"]
+  dns64_clients: [127.0.0.0/8, "::1"]
+# example.test isn't delegated from the real root, so DNSSEC validation of
+# the forwarded answers can never succeed here.
+bind_dnssec_validation: "no"
+bind_dns64_enabled: true
+bind_dns64_options:
+  exclude: ["::ffff:0:0/96"]
+  recursive-only: false
+bind_max_cache_size: 256m
+bind_recursive_clients: 2000
+bind_log_buffered: true
+bind_dnstap_enabled: true
+bind_dnstap_export_enabled: true
+bind_zones:
+  - name: example.test
+    type: forward
+    forwarders: ["{{ test_master_ip }}"]

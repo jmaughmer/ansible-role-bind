@@ -1,0 +1,11 @@
+// {{ ansible_managed }}
+// ACL definitions. Entries come from bind_acls (dict of name -> list of
+// match elements). An empty list renders as an empty match list, which
+// matches nothing — safe default-deny for e.g. an unpopulated transfer_hosts.
+{% for acl_name, entries in bind_acls.items() %}
+acl "{{ acl_name }}" {
+{% for entry in entries %}
+    {{ entry }};
+{% endfor %}
+};
+{% endfor %}

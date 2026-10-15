@@ -1,0 +1,95 @@
+---
+- name: Determine master zones whose zone file this role renders
+  ansible.builtin.set_fact:
+    bind_managed_master_zones: "{{ bind_zones | selectattr('type', 'equalto', 'master') | selectattr('records', 'defined') | list }}"
+
+# SOA serials for role-rendered zones that don't pin `serial`: keep the
+# serial already on disk while the zone's content is unchanged (so re-runs
+# change nothing and send no NOTIFYs), and bump it only when the content
+# actually changes — to the larger of current+1 and today's YYYYMMDD00, so
+# it always increases and secondaries pick the change up. The three tasks
+# below read the current file, render it in check mode at its current
+# serial to see whether anything else differs, then render it for real.
+- name: Read the role-managed zone files currently on the host
+  ansible.builtin.slurp:
+    src: "{{ bind_zones_dir }}/{{ zone.file | default(zone.name + '.zone') }}"
+  loop: "{{ bind_managed_master_zones }}"
+  loop_control:
+    loop_var: zone
+    label: "{{ zone.name }}"
+  register: bind_zone_files
+  failed_when: false   # not there yet on a zone's first run
+
+- name: Check which role-managed zones' content changed, at their current serial
+  ansible.builtin.template:
+    src: zone.db.j2
+    dest: "{{ bind_zones_dir }}/{{ zone.file | default(zone.name + '.zone') }}"
+  vars:
+    zone: "{{ item.zone }}"
+    bind_zone_serial: "{{ zone.serial | default((item.content | default('') | b64decode | regex_findall('(\\d+)\\s*; serial') + ['0']) | first) }}"
+  loop: "{{ bind_zone_files.results }}"
+  loop_control:
+    label: "{{ item.zone.name }}"
+  check_mode: true
+  diff: false
+  register: bind_zone_drift
+
+- name: Render master zone files where records are managed by this role
+  ansible.builtin.template:
+    src: zone.db.j2
+    dest: "{{ bind_zones_dir }}/{{ zone.file | default(zone.name + '.zone') }}"
+    owner: "{{ bind_user }}"
+    group: "{{ bind_group }}"
+    mode: "0640"
+    validate: "named-checkzone -q {{ zone.name }} %s"
+  vars:
+    # templates/zone.db.j2 reads the zone as `zone`, not the loop's `item`.
+    zone: "{{ item.item.zone }}"
+    bind_zone_current_serial: "{{ (item.item.content | default('') | b64decode | regex_findall('(\\d+)\\s*; serial') + ['0']) | first | int }}"
+    bind_zone_serial: >-
+      {{ zone.serial if zone.serial is defined
+         else bind_zone_current_serial if not item.changed
+         else [bind_zone_current_serial | int + 1, (now(utc=true, fmt='%Y%m%d') ~ '00') | int] | max }}
+  loop: "{{ bind_zone_drift.results }}"
+  loop_control:
+    label: "{{ item.item.zone.name }}"
+  notify: reload named
+
+- name: Determine master zones whose zone file is managed out of band
+  ansible.builtin.set_fact:
+    bind_unmanaged_master_zones: "{{ bind_zones | selectattr('type', 'equalto', 'master') | rejectattr('records', 'defined') | list }}"
+
+- name: Warn about master zones with unmanaged zone files
+  ansible.builtin.debug:
+    msg: >-
+      Zone '{{ item.name }}' is type: master with no 'records' defined — this role will not
+      create or update {{ bind_zones_dir }}/{{ item.file | default(item.name + '.zone') }}.
+      Ensure that file exists on the target before named starts, or add 'records' to manage it here.
+  loop: "{{ bind_unmanaged_master_zones }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+# A separate stat+assert pass (rather than checking inline above) so that
+# every item in the loop below actually ran the stat call — filtering with
+# `when` in the loop that registers results would leave skipped entries with
+# no `.stat` key, and the assert would then fail on the wrong attribute
+# error instead of the intended message.
+- name: Check whether unmanaged master zone files exist
+  ansible.builtin.stat:
+    path: "{{ bind_zones_dir }}/{{ item.file | default(item.name + '.zone') }}"
+  loop: "{{ bind_unmanaged_master_zones }}"
+  loop_control:
+    label: "{{ item.name }}"
+  register: bind_unmanaged_zone_stat
+
+- name: Fail if an unmanaged master zone file is missing
+  ansible.builtin.assert:
+    that:
+      - item.stat.exists
+    fail_msg: >-
+      {{ item.item.name }}: zone file {{ bind_zones_dir }}/{{ item.item.file | default(item.item.name + '.zone') }}
+      does not exist and no 'records' were given to generate it. named will fail to start.
+  loop: "{{ bind_unmanaged_zone_stat.results }}"
+  loop_control:
+    label: "{{ item.item.name }}"
+  when: bind_unmanaged_zone_stat.results is defined

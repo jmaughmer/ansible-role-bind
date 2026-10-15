@@ -1,0 +1,13 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Convert BIND dnstap captures to NDJSON every {{ bind_dnstap_export_interval }}
+
+[Timer]
+# First run shortly after the timer starts, then {{ bind_dnstap_export_interval }} after each run
+# finishes — so a slow run (a large backlog) never overlaps the next one.
+OnActiveSec=30s
+OnUnitInactiveSec={{ bind_dnstap_export_interval }}
+AccuracySec=5s
+
+[Install]
+WantedBy=timers.target

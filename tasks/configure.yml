@@ -1,0 +1,94 @@
+---
+# conf.d/*.conf fragments are templated first because named.conf includes
+# them by path — validating named.conf below would fail on a fresh host if
+# an included file didn't exist yet.
+- name: Template ACL definitions
+  ansible.builtin.template:
+    src: conf.d/acls.conf.j2
+    dest: "{{ bind_conf_dir }}/acls.conf"
+    owner: root
+    group: "{{ bind_group }}"
+    mode: "0640"
+  notify: reload named
+
+- name: Template custom dnssec-policy definitions
+  ansible.builtin.template:
+    src: conf.d/dnssec-policies.conf.j2
+    dest: "{{ bind_conf_dir }}/dnssec-policies.conf"
+    owner: root
+    group: "{{ bind_group }}"
+    mode: "0640"
+  when: bind_dnssec_policies | length > 0
+  notify: reload named
+
+- name: Remove custom dnssec-policy config when unused
+  ansible.builtin.file:
+    path: "{{ bind_conf_dir }}/dnssec-policies.conf"
+    state: absent
+  when: bind_dnssec_policies | length == 0
+  notify: reload named
+
+- name: Template options
+  ansible.builtin.template:
+    src: conf.d/options.conf.j2
+    dest: "{{ bind_conf_dir }}/options.conf"
+    owner: root
+    group: "{{ bind_group }}"
+    mode: "0640"
+  notify: reload named
+
+- name: Template statistics-channels
+  ansible.builtin.template:
+    src: conf.d/statistics.conf.j2
+    dest: "{{ bind_conf_dir }}/statistics.conf"
+    owner: root
+    group: "{{ bind_group }}"
+    mode: "0640"
+  when: bind_statistics_channels_enabled
+  notify: reload named
+
+- name: Remove statistics-channels config when disabled
+  ansible.builtin.file:
+    path: "{{ bind_conf_dir }}/statistics.conf"
+    state: absent
+  when: not bind_statistics_channels_enabled
+  notify: reload named
+
+- name: Template per-category logging
+  ansible.builtin.template:
+    src: conf.d/logging.conf.j2
+    dest: "{{ bind_conf_dir }}/logging.conf"
+    owner: root
+    group: "{{ bind_group }}"
+    mode: "0640"
+  when: not bind_log_consolidated
+  notify: reload named
+
+- name: Template consolidated (single-file) logging
+  ansible.builtin.template:
+    src: conf.d/logging-consolidated.conf.j2
+    dest: "{{ bind_conf_dir }}/logging.conf"
+    owner: root
+    group: "{{ bind_group }}"
+    mode: "0640"
+  when: bind_log_consolidated
+  notify: reload named
+
+- name: Template zone definitions
+  ansible.builtin.template:
+    src: conf.d/zones.conf.j2
+    dest: "{{ bind_conf_dir }}/zones.conf"
+    owner: root
+    group: "{{ bind_group }}"
+    mode: "0640"
+  notify: reload named
+
+- name: Template main named.conf
+  ansible.builtin.template:
+    src: named.conf.j2
+    dest: "{{ bind_main_conf_path }}"
+    owner: root
+    group: "{{ bind_group }}"
+    mode: "0640"
+    validate: "named-checkconf %s"
+  notify: reload named

@@ -1,0 +1,19 @@
+---
+- name: Ensure the local DS record output directory exists
+  # Once per signing host, not run_once: run_once would evaluate this file's
+  # `when` (signing enabled on this host) for the first host in the batch
+  # only, and skip the directory for everyone if that host doesn't sign.
+  ansible.builtin.file:
+    path: "{{ bind_dnssec_ds_output_dir }}"
+    state: directory
+    mode: "0750"
+  delegate_to: localhost
+  become: false
+
+- name: Manage DNSSEC keys per signed master zone
+  ansible.builtin.include_tasks: dnssec_keys_per_zone.yml
+  loop: "{{ bind_zones }}"
+  loop_control:
+    loop_var: bind_dnssec_zone
+    label: "{{ bind_dnssec_zone.name }}"
+  when: bind_dnssec_zone.type == 'master' and (bind_dnssec_zone.dnssec | default(false))

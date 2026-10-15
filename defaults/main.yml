@@ -1,0 +1,419 @@
+---
+# =============================================================================
+# bind_dns role — defaults
+# =============================================================================
+# One host is deployed as exactly one of these roles:
+#   authoritative  -> master or slave zone hosting, recursion OFF
+#   recursive      -> caching/resolving only, no local zones, recursion ON
+# The distinction only changes recursion defaults below; every other
+# feature (DNSSEC, logging, statistics, GeoIP, ACLs) applies to both.
+bind_dns_role: "authoritative"   # authoritative | recursive
+
+# -----------------------------------------------------------------------------
+# Packages / service
+# -----------------------------------------------------------------------------
+# RHEL 8's base 'bind' package is 9.11, which predates dnssec-policy. RHEL 8
+# also carries 'bind9.16', a separately-named AppStream backport of BIND
+# 9.16 for exactly this gap — see bind_use_bind9_16 below. RHEL 9+'s base
+# 'bind' is already 9.16+, so this only ever matters on RHEL 8.
+bind_packages: "{{ ['bind9.16', 'bind9.16-utils'] if bind_use_bind9_16 else ['bind', 'bind-utils'] }}"
+# named-chroot is a separate systemd unit shipped by the bind-chroot (or
+# bind9.16-chroot) package; switching bind_chroot_enabled flips which one
+# this role manages. Both package flavors ship identically-named units.
+bind_service_name: "{{ 'named-chroot' if bind_chroot_enabled else 'named' }}"
+bind_user: named
+bind_group: named
+
+# RHEL 8 only: install bind9.16/bind9.16-utils/bind9.16-chroot instead of
+# the base bind/bind-utils/bind-chroot. Defaults to on automatically
+# whenever DNSSEC signing is requested on RHEL 8, since dnssec-policy needs
+# it, and stays on once bind9.16 is installed (tasks/detect.yml checks), so
+# turning signing off later never silently downgrades a host to 9.11. Set it
+# explicitly to false to go back to 9.11 on purpose, or to true to use 9.16
+# for other reasons. The two package sets Conflict: at the RPM level (same
+# binary/unit names, can't coexist) — the role swaps one for the other in a
+# single dnf transaction. Has no effect, and is asserted off, on RHEL 9+.
+bind_use_bind9_16: >-
+  {{ true if (ansible_facts['distribution_major_version'] | int == 8 and
+  (bind_dnssec_enable_signing or (bind_bind9_16_rpm | default({})).rc | default(1) == 0)) else false }}
+
+bind_main_conf_path: /etc/named.conf
+bind_conf_dir: /etc/named/conf.d
+bind_data_dir: /var/named
+bind_zones_dir: /var/named/zones
+bind_slave_zones_dir: "{{ bind_zones_dir }}/slaves"
+bind_log_dir: /var/log/named
+bind_stats_dir: /var/named/data
+bind_dnssec_keys_dir: /var/named/keys
+# Where named keeps its RFC 5011 trust-anchor state (managed-keys.bind),
+# which dnssec-validation needs to write. RHEL's own named.conf uses this
+# same directory; it's labeled named_cache_t, which named can always write.
+bind_managed_keys_dir: "{{ bind_data_dir }}/dynamic"
+
+# -----------------------------------------------------------------------------
+# Chroot (RHEL 9+, via the bind-chroot package's named-chroot systemd unit —
+# named runs rooted at /var/named/chroot instead of /). That path is fixed by
+# the package's own unit file, not configurable here.
+#
+# RHEL's default /etc/named-chroot.files already bind-mounts /etc/named and
+# /var/named wholesale, which covers every path this role uses above
+# (bind_conf_dir, bind_zones_dir, bind_stats_dir, bind_dnssec_keys_dir all
+# live under one of those two trees) with no extra work. Only bind_log_dir
+# (under /var/log, not /var/named) needs an explicit entry — the role adds
+# it automatically when bind_chroot_enabled is true. bind_geoip_directory
+# defaults to /usr/share/GeoIP for the same reason: it's also already in
+# RHEL's default chroot file list.
+# -----------------------------------------------------------------------------
+bind_chroot_enabled: false
+bind_chroot_extra_paths: []   # additional host paths to bind-mount into the chroot
+
+# -----------------------------------------------------------------------------
+# Network
+# -----------------------------------------------------------------------------
+bind_listen_ipv4: ["any"]
+bind_listen_ipv6: ["any"]
+
+bind_version_string: "not disclosed"
+bind_hostname_string: "not disclosed"
+
+# -----------------------------------------------------------------------------
+# ACLs — name: list of match elements (bare, no trailing semicolon).
+# Elements may be networks, other acl names, "key <name>", or (with GeoIP
+# enabled) "geoip country US" style match elements.
+# -----------------------------------------------------------------------------
+bind_acls:
+  trusted:
+    - 127.0.0.1
+    - ::1
+  transfer_hosts: []      # secondaries allowed to AXFR/IXFR master zones
+  recursion_clients: []   # clients allowed to use this server recursively
+  dns64_clients: []       # clients that get DNS64 synthesis
+
+# -----------------------------------------------------------------------------
+# Zone transfers (master side)
+# -----------------------------------------------------------------------------
+bind_allow_transfer_acl: transfer_hosts   # default allow-transfer ACL name, overridable per zone
+bind_notify: true                         # global NOTIFY default; per-zone can override
+
+# -----------------------------------------------------------------------------
+# Recursion / forwarding
+# -----------------------------------------------------------------------------
+# On authoritative (master/slave) hosts this should stay false — they answer
+# only for zones they host. Dedicated caching resolvers should set this true
+# (or set bind_dns_role: recursive, which flips the same default).
+bind_recursion_enabled: "{{ true if bind_dns_role == 'recursive' else false }}"
+bind_allow_recursion_acl: recursion_clients
+bind_allow_query_cache_acl: recursion_clients
+
+bind_forwarders: []
+bind_forward_policy: first   # first | only
+
+# -----------------------------------------------------------------------------
+# DNS64 — only meaningful where recursion is enabled
+# -----------------------------------------------------------------------------
+bind_dns64_enabled: false
+bind_dns64_prefix: "64:ff9b::/96"
+bind_dns64_clients_acl: dns64_clients
+# Extra dns64 sub-clauses. exclude/mapped take an address match list (a
+# string or a list) and render as "key { value; ... };"; suffix takes one
+# IPv6 address and recursive-only/break-dnssec a boolean, rendered as
+# "key value;". clients comes from bind_dns64_clients_acl above. E.g.
+#   bind_dns64_options: { exclude: ["64:ff9b::/96"], suffix: "::", recursive-only: true }
+bind_dns64_options: {}
+
+# -----------------------------------------------------------------------------
+# DNSSEC
+# -----------------------------------------------------------------------------
+bind_dnssec_validation: auto   # auto | yes | no  (validate signatures on lookups)
+# Automatic signing of locally-hosted master zones via BIND's built-in
+# dnssec-policy + inline-signing. Requires BIND 9.16+: on RHEL 9+ that's
+# already the base 'bind' package; on RHEL 8 this role automatically pulls
+# in the bind9.16 AppStream package instead (see bind_use_bind9_16 above).
+bind_dnssec_enable_signing: false
+# named dnssec-policy to apply to signed zones — a BIND built-in
+# ("default"/"insecure"/"none") or a key in bind_dnssec_policies below.
+bind_dnssec_policy: default
+
+# Custom dnssec-policy (KASP) definitions, rendered as top-level named.conf
+# dnssec-policy blocks and referenced by name from bind_dnssec_policy or a
+# zone's own dnssec_policy. Leave empty to just use BIND's built-in
+# "default" policy (a single CSK, algorithm ecdsap256sha256, unlimited
+# lifetime) — define entries here only when you need explicit control over
+# KSK/ZSK algorithm, key size, or rollover timing. Each entry:
+#   keys:                         required; list of {role, lifetime, algorithm, key_size}
+#     role:                       ksk | zsk | csk
+#     lifetime:                   duration ("P1Y", "30d", or "unlimited")
+#     algorithm:                  e.g. ecdsap256sha256, ecdsap384sha384, rsasha256, ed25519, ed448
+#     key_size:                   optional, only meaningful for rsasha* algorithms
+#   dnskey_ttl, publish_safety, retire_safety, signatures_refresh,
+#   signatures_validity, signatures_validity_dnskey, max_zone_ttl,
+#   zone_propagation_delay, parent_ds_ttl, parent_propagation_delay,
+#   purge_keys:                   all optional durations, passed through as-is
+#   nsec3param:                   optional, raw string, e.g. "iterations 0 optout no salt-length 0"
+# Example:
+#   bind_dnssec_policies:
+#     strict:
+#       keys:
+#         - { role: ksk, lifetime: P1Y, algorithm: ecdsap256sha256 }
+#         - { role: zsk, lifetime: P30D, algorithm: ecdsap256sha256 }
+#       signatures_validity: P14D
+#       max_zone_ttl: P1D
+bind_dnssec_policies: {}
+
+# After named starts, for every master zone with dnssec: true: run `rndc
+# dnssec -status <zone>` and surface it during the play, and derive the
+# zone's current DS record from its KSK (dnssec-dsfromkey against whichever
+# key file's DNSKEY record has the 257 SEP/KSK flag set — inline-signing
+# doesn't reliably produce dsset-<zone>. files the way manual
+# dnssec-signzone does, so this role finds the KSK by content, not by
+# guessing a filename) and write it to a file on the control node for you
+# to hand to the registrar/parent zone operator.
+bind_dnssec_manage_keys: true
+bind_dnssec_ds_output_dir: "{{ playbook_dir }}/dnssec-ds-records"
+bind_dnssec_key_wait_retries: 6   # keys may not exist yet moments after named's first start
+bind_dnssec_key_wait_delay: 5     # seconds between retries
+
+# -----------------------------------------------------------------------------
+# GeoIP (GeoIP2/MaxMind — the only form BIND 9.11+ on RHEL supports; legacy
+# GeoIP was dropped upstream). Use "geoip country XX" / "geoip city ..." /
+# "geoip asn ..." style entries inside bind_acls or per-zone config once
+# enabled.
+# -----------------------------------------------------------------------------
+bind_geoip_enabled: false
+# geoipupdate's own documented default DatabaseDirectory — also already in
+# RHEL's default /etc/named-chroot.files, so it needs no extra chroot entry.
+bind_geoip_directory: /usr/share/GeoIP
+bind_geoipupdate_install: false          # install + configure geoipupdate to fetch mmdb files
+bind_geoipupdate_account_id: ""
+bind_geoipupdate_license_key: ""         # supply via vault, never plaintext in inventory
+bind_geoipupdate_edition_ids:
+  - GeoLite2-Country
+  - GeoLite2-City
+  - GeoLite2-ASN
+bind_geoipupdate_run_now: false          # actually invoke geoipupdate during the play
+
+# -----------------------------------------------------------------------------
+# Logging
+# -----------------------------------------------------------------------------
+# false (default) = one file per category under bind_log_dir, e.g.
+#   /var/log/named/queries.log, /var/log/named/xfer-in.log, ...
+# true  = every category routed into a single bind_log_consolidated_file,
+#   in the exact layout bind-elasticsearch-pipeline/named.conf.logging.conf
+#   uses, for drop-in compatibility with that ingest pipeline.
+bind_log_consolidated: false
+bind_log_consolidated_file: named.log
+
+# Matches the 17 categories bind-elasticsearch-pipeline's grok/simulate data
+# covers. Add/remove categories here; both logging layouts iterate this list.
+bind_log_categories:
+  - default
+  - general
+  - database
+  - security
+  - config
+  - resolver
+  - xfer-in
+  - xfer-out
+  - notify
+  - client
+  - unmatched
+  - queries
+  - network
+  - update
+  - dispatch
+  - dnssec
+  - lame-servers
+
+bind_log_severity: info      # severity per channel; "dynamic" tracks named -d level
+# 9.11-safe legacy format ("14-Aug-2026 10:23:45.678", no UTC offset) so the
+# existing pipeline's primary grok matches. Set to "iso8601-utc" only if
+# every target host is confirmed BIND 9.12+.
+bind_log_print_time: "yes"   # yes | iso8601-utc
+bind_log_file_versions: 3    # rolled files kept per log, besides the live one (dnstap uses the same by default)
+bind_log_file_size: 100m
+
+# DNS answers (dnstap). The "queries" category above only ever logs the
+# question (name, class, type, flags); BIND has no text log channel that
+# carries answer records. dnstap captures the full DNS message instead —
+# question, answer/authority/additional sections, rcode and flags — in
+# binary Frame Streams format; read it with "dnstap-read -p <file>" (one
+# line per message plus the message in zone-file format) or "-y" (YAML),
+# both from bind-utils/bind9.16-utils. Every RHEL 8/9/10 bind and bind9.16
+# build has dnstap compiled in.
+#
+# Off by default: it writes a record for every captured message, so size
+# bind_dnstap_file_size/_versions for your query rate. Needs BIND 9.12+ for
+# dnstap-output's size/versions rotation — RHEL 9+, or RHEL 8 with
+# bind_use_bind9_16: true. RHEL 8's base 9.11 can only write one file that
+# grows without limit, so enabling dnstap there fails the play instead of
+# eventually filling the disk.
+bind_dnstap_enabled: false
+# Message types to capture: (all|auth|client|forwarder|resolver), optionally
+# followed by query or response. "client response" = every answer this
+# server sends its clients, on authoritative and recursive hosts alike. Add
+# "resolver response" on recursive hosts to also capture the answers named
+# gets back from upstream servers. Capturing the queries too (roughly double
+# the volume) lets the Elasticsearch export pair each answer with its query
+# and record its latency (event.duration): add "auth query" on authoritative
+# hosts (named logs queries it answers from its own zones, recursion off, as
+# auth queries, so "client query" captures nothing there) or "client query"
+# on resolvers.
+bind_dnstap_types:
+  - client response
+# Written into bind_log_dir, so the chroot bind mount and the named_log_t
+# SELinux label already cover it. Deliberately not "*.log": it's binary,
+# and Elastic Agent's "{{ bind_log_dir }}/*.log" glob for the per-category
+# text logs must not pick it up.
+bind_dnstap_file: dnstap.tap
+bind_dnstap_file_size: "{{ bind_log_file_size }}"
+bind_dnstap_file_versions: "{{ bind_log_file_versions }}"
+
+# Export the dnstap capture to Elasticsearch (requires bind_dnstap_enabled).
+# A systemd timer runs files/bind-dnstap-to-ndjson.py every
+# bind_dnstap_export_interval: it rolls the capture ("rndc dnstap -roll"),
+# decodes each newly rolled file, and appends one ECS-shaped JSON object per
+# DNS message to bind_dnstap_ndjson_file, which Elastic Agent tails with its
+# ndjson parser — see examples/elastic-agent-dnstap.yml. No extra packages:
+# standard-library Python, run under platform-python on RHEL 8.
+bind_dnstap_export_enabled: false
+bind_dnstap_export_interval: 1min        # systemd time span; also the export delay
+# Also deliberately not "*.log", so the text-log glob doesn't pick it up.
+bind_dnstap_ndjson_file: dnstap.ndjson
+bind_dnstap_ndjson_size: "{{ bind_log_file_size }}"
+bind_dnstap_ndjson_versions: "{{ bind_log_file_versions }}"
+bind_dnstap_export_script: /usr/local/libexec/bind-dnstap-to-ndjson
+bind_dnstap_export_python: "{{ '/usr/libexec/platform-python' if ansible_facts['distribution_major_version'] | int == 8 else '/usr/bin/python3' }}"
+
+# -----------------------------------------------------------------------------
+# Statistics
+# -----------------------------------------------------------------------------
+bind_zone_statistics: true
+bind_statistics_channels_enabled: true
+bind_statistics_channel_address: 127.0.0.1
+bind_statistics_channel_port: 8053
+bind_statistics_channel_allow:
+  - 127.0.0.1
+
+# -----------------------------------------------------------------------------
+# Performance tuning
+# -----------------------------------------------------------------------------
+# BIND's own defaults already cover what's most often "tuned" by hand: every
+# RHEL 8+ build defaults edns-udp-size/max-udp-size to 1232 (DNS Flag Day
+# 2020), max-cache-size to 90% of RAM and prefetch to "2 9", so the role
+# leaves those alone. Variables below set to "" leave BIND's default too.
+
+# Leave authority/additional records out of answers that don't need them
+# (e.g. the NS set on every reply): smaller responses, less work per query,
+# fewer truncations to TCP. no-auth-recursive is BIND 9.16+'s own default;
+# RHEL 8's 9.11 defaults to "no", so setting it gives every host the same
+# behavior. yes | no | no-auth | no-auth-recursive
+bind_minimal_responses: no-auth-recursive
+
+# Master zones: when a zone file changes (e.g. this role re-renders it),
+# named journals the difference so secondaries get a small IXFR instead of
+# re-transferring the whole zone. DNSSEC zones already do this through
+# inline-signing. Needs the SOA serial to increase on every change — which
+# the role does for zones whose records it manages without a pinned serial.
+bind_ixfr_from_differences: true
+# Journal size cap. BIND's default is unlimited (2 GB) on 9.11 and twice the
+# zone's size on 9.16+; set e.g. "50m" to bound it on RHEL 8's 9.11.
+bind_max_journal_size: ""
+
+# Query logging (the "queries" log category) is the most expensive thing
+# named does per query — BIND's documentation warns its cost "may be
+# significant on heavily loaded servers". It stays on by default because
+# the Elasticsearch pipeline reads queries.log; turn it off on busy
+# resolvers that don't need it. bind_log_buffered stops named flushing
+# every log line to disk as it's written, which cuts the I/O cost of
+# logging at the price of lines arriving later (and the last few being
+# lost if named crashes).
+bind_querylog: true
+bind_log_buffered: false
+
+# Client capacity. The first two only apply to recursive resolvers and are
+# ignored when recursion is off.
+bind_max_cache_size: ""      # BIND default 90% of RAM; e.g. "50%" or "4g" when named shares the host
+bind_recursive_clients: ""   # BIND default 1000 concurrent recursive lookups; raise on busy resolvers
+bind_tcp_clients: ""         # BIND default 150 concurrent TCP client connections
+
+# Zone-transfer and NOTIFY throughput, for hosts with many zones (BIND's
+# defaults are sized for a handful). Raise transfers_in/transfers_per_ns
+# and serial_query_rate on secondaries that pull hundreds of zones from one
+# primary, transfers_out and notify_rate on that primary.
+bind_transfers_in: ""        # BIND default 10 concurrent inbound transfers
+bind_transfers_per_ns: ""    # BIND default 2 concurrent inbound transfers from any one primary
+bind_transfers_out: ""       # BIND default 10 concurrent outbound transfers
+bind_serial_query_rate: ""   # BIND default 20 SOA refresh queries per second
+bind_notify_rate: ""         # BIND default 20 NOTIFY messages per second
+
+# Response rate limiting, for authoritative servers reachable from the
+# internet: caps identical responses per client netblock, which blunts DNS
+# amplification attacks bounced off this server and the load they cause.
+# Off ({}) by default. Each key is a rate-limit option; a list value (e.g.
+# exempt-clients) renders as an address match list. For example:
+#   bind_rate_limit: { responses-per-second: 10, window: 5, exempt-clients: [trusted] }
+bind_rate_limit: {}
+
+# -----------------------------------------------------------------------------
+# Zones — authoritative hosts only. Each entry:
+#   name:                zone name (required)
+#   type:                master | slave | forward (required)
+#   file:                zone data filename, default "<name>.zone"
+#   allow_transfer_acl:  overrides bind_allow_transfer_acl for this zone
+#   also_notify:         list of IPs, master zones only
+#   notify:              yes|no, overrides bind_notify for this zone
+#   masters:             list of master IPs, slave zones only
+#   dnssec:              bool, sign this zone (master only, requires
+#                         bind_dnssec_enable_signing: true)
+#   dnssec_policy:        overrides bind_dnssec_policy for this zone
+#   zone_statistics:      overrides bind_zone_statistics for this zone
+#   forwarders/forward_policy: forward-zone only
+#   records:              optional list of {name, type, value, comment} to
+#                          render a brand-new master zone file from
+#                          templates/zone.db.j2; omit to manage the zone
+#                          file out of band (default). comment is optional
+#                          free text, rendered as a trailing "; <comment>"
+#                          on that record's line for documentation purposes
+#                          only — it has no effect on the record itself.
+#   primary_ns/nameservers: required when records is set — the SOA MNAME
+#                          and the apex NS list, both host names without a
+#                          trailing dot
+#   admin_email/serial/ttl/refresh/retry/expire/negative_ttl:
+#                          optional, only used when records is set (SOA
+#                          fields; admin_email is DNS-style, e.g.
+#                          hostmaster.example.com). Leave serial unset to
+#                          let the role manage it: it keeps the serial
+#                          already on disk while the records are unchanged
+#                          and bumps it (to at least today's YYYYMMDD00)
+#                          only when they change. Set serial to pin it
+#                          yourself — then bump it on every records change,
+#                          or secondaries won't transfer the update.
+bind_zones: []
+
+# At scale (dozens to hundreds of zones), one flat bind_zones: list becomes
+# a painful file to review/diff/merge in git, and multiple host_vars files
+# each defining their own top-level bind_zones: key do NOT merge — Ansible
+# just lets the last one loaded win, since list variables (unlike dicts)
+# never auto-merge across sources. bind_zones_vars_dir is this role's own
+# answer to that: point it (on the CONTROL node — not to be confused with
+# bind_zones_dir above, which is a path on the managed host) at a directory
+# of small per-zone files (one zone dict, or a list of a few related zones,
+# per file — tasks/load_zones.yml accepts either shape) and every
+# *.yml/*.yaml file in it is loaded and appended to bind_zones before
+# anything else in the role runs. Additive with bind_zones above, not a
+# replacement for it — a handful of zones can stay inline while the bulk
+# lives in files, or vice versa.
+#
+# Leave empty (default) to skip this entirely. When set, use an absolute
+# path, or build one from the playbook_dir magic variable
+# ("{{ playbook_dir }}/host_vars/{{ inventory_hostname }}/zones.d") rather
+# than a bare relative path, since what a relative path resolves against
+# here isn't worth relying on. scripts/zone_to_bind_vars.py's
+# --split-output writes directly in the one-file-per-zone shape this reads.
+bind_zones_vars_dir: ""
+
+# -----------------------------------------------------------------------------
+# System integration
+# -----------------------------------------------------------------------------
+bind_manage_selinux: true
+bind_manage_firewalld: true

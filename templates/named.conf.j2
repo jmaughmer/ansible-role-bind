@@ -1,0 +1,21 @@
+// {{ ansible_managed }}
+// Managed by the bind_dns Ansible role. Do not edit by hand — changes will
+// be overwritten on the next run. Edit {{ bind_conf_dir }}/*.conf.j2 in the
+// role, or set role variables, instead.
+
+include "/etc/rndc.key";
+
+controls {
+    inet 127.0.0.1 port 953 allow { 127.0.0.1; } keys { "rndc-key"; };
+};
+
+include "{{ bind_conf_dir }}/acls.conf";
+{% if bind_dnssec_policies %}
+include "{{ bind_conf_dir }}/dnssec-policies.conf";
+{% endif %}
+include "{{ bind_conf_dir }}/logging.conf";
+include "{{ bind_conf_dir }}/options.conf";
+{% if bind_statistics_channels_enabled %}
+include "{{ bind_conf_dir }}/statistics.conf";
+{% endif %}
+include "{{ bind_conf_dir }}/zones.conf";

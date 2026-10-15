@@ -1,0 +1,10 @@
+---
+- name: Validate full named configuration
+  ansible.builtin.command: "named-checkconf {{ bind_main_conf_path }}"
+  changed_when: false
+
+- name: Enable and start named
+  ansible.builtin.systemd:
+    name: "{{ bind_service_name }}"
+    enabled: true
+    state: started

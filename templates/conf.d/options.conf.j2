@@ -1,0 +1,109 @@
+// {{ ansible_managed }}
+options {
+    directory       "{{ bind_data_dir }}";
+    dump-file       "{{ bind_stats_dir }}/cache_dump.db";
+    statistics-file "{{ bind_stats_dir }}/named_stats.txt";
+    memstatistics-file "{{ bind_stats_dir }}/named_mem_stats.txt";
+    pid-file        "/run/named/named.pid";
+    managed-keys-directory "{{ bind_managed_keys_dir }}";
+{% if bind_geoip_enabled %}
+    geoip-directory "{{ bind_geoip_directory }}";
+{% endif %}
+
+    listen-on port 53 { {% for i in bind_listen_ipv4 %}{{ i }}; {% endfor %}};
+    listen-on-v6 port 53 { {% for i in bind_listen_ipv6 %}{{ i }}; {% endfor %}};
+
+    allow-query { any; };
+
+{% if bind_recursion_enabled %}
+    recursion yes;
+    allow-recursion { {{ bind_allow_recursion_acl }}; };
+    allow-query-cache { {{ bind_allow_query_cache_acl }}; };
+{% else %}
+    recursion no;
+    allow-recursion { none; };
+    allow-query-cache { none; };
+{% endif %}
+
+{% if bind_forwarders | length > 0 %}
+    forwarders {
+{% for f in bind_forwarders %}
+        {{ f }};
+{% endfor %}
+    };
+    forward {{ bind_forward_policy }};
+{% endif %}
+
+{% if bind_dns64_enabled %}
+    dns64 {{ bind_dns64_prefix }} {
+        clients { {{ bind_dns64_clients_acl }}; };
+{% for key, value in bind_dns64_options.items() %}
+{% if key in ['clients', 'exclude', 'mapped'] %}
+        {{ key }} { {% for element in ([value] if value is string else value) %}{{ element }}; {% endfor %}};
+{% elif value is boolean %}
+        {{ key }} {{ 'yes' if value else 'no' }};
+{% else %}
+        {{ key }} {{ value }};
+{% endif %}
+{% endfor %}
+    };
+{% endif %}
+
+    // Zone transfers are deny-by-default here; each master zone in
+    // zones.conf sets its own allow-transfer ACL explicitly.
+    allow-transfer { none; };
+    notify {{ 'yes' if bind_notify else 'no' }};
+
+{# An unquoted yes/no in YAML arrives as a boolean, which would render as True/False. #}
+    dnssec-validation {{ (('yes' if bind_dnssec_validation else 'no') if bind_dnssec_validation is boolean else bind_dnssec_validation) }};
+
+    zone-statistics {{ 'yes' if bind_zone_statistics else 'no' }};
+
+    // Performance tuning — see "Performance tuning" in defaults/main.yml.
+{% if bind_minimal_responses is boolean %}
+    minimal-responses {{ 'yes' if bind_minimal_responses else 'no' }};
+{% elif bind_minimal_responses | string | length > 0 %}
+    minimal-responses {{ bind_minimal_responses }};
+{% endif %}
+    querylog {{ 'yes' if bind_querylog else 'no' }};
+{% set bind_tuning = {
+     'tcp-clients': bind_tcp_clients,
+     'max-journal-size': bind_max_journal_size,
+     'transfers-in': bind_transfers_in,
+     'transfers-per-ns': bind_transfers_per_ns,
+     'transfers-out': bind_transfers_out,
+     'serial-query-rate': bind_serial_query_rate,
+     'notify-rate': bind_notify_rate,
+   } %}
+{% set bind_recursive_tuning = {
+     'max-cache-size': bind_max_cache_size,
+     'recursive-clients': bind_recursive_clients,
+   } if bind_recursion_enabled else {} %}
+{% for option, value in bind_tuning.items() | list + bind_recursive_tuning.items() | list
+       if value is not none and value | string | length > 0 %}
+    {{ option }} {{ value }};
+{% endfor %}
+{% if bind_rate_limit | length > 0 %}
+    rate-limit {
+{%   for option, value in bind_rate_limit.items() %}
+{%     if value is boolean %}
+        {{ option }} {{ 'yes' if value else 'no' }};
+{%     elif value is string or value is number %}
+        {{ option }} {{ value }};
+{%     else %}
+        {{ option }} { {% for element in value %}{{ element }}; {% endfor %}};
+{%     endif %}
+{%   endfor %}
+    };
+{% endif %}
+{% if bind_dnstap_enabled %}
+
+    // dnstap: full DNS messages, answer sections included, which the text
+    // query log can't carry. Binary; read with: dnstap-read -p <file>
+    dnstap { {% for message_type in bind_dnstap_types %}{{ message_type }}; {% endfor %}};
+    dnstap-output file "{{ bind_log_dir }}/{{ bind_dnstap_file }}" size {{ bind_dnstap_file_size }} versions {{ bind_dnstap_file_versions }} suffix increment;
+{% endif %}
+
+    version "{{ bind_version_string }}";
+    hostname "{{ bind_hostname_string }}";
+};

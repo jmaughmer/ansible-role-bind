@@ -1,0 +1,6 @@
+---
+collections:
+  - name: ansible.posix
+  - name: community.general
+  - name: containers.podman   # Molecule's podman driver (default scenario)
+  - name: community.docker    # Molecule's docker driver (docker scenario)

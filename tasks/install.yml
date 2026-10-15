@@ -1,0 +1,56 @@
+---
+- name: Install BIND packages
+  # bind9.16 (RHEL 8's AppStream backport of BIND 9.16) and the base bind
+  # packages Conflict: with each other at the RPM level (bind9.16-dnssec-utils
+  # even conflicts with bind-utils < 9.16), so only one flavor can be
+  # installed at a time. allowerasing lets dnf swap one flavor for the other
+  # in a single transaction, erasing whatever conflicts — rather than
+  # removing the old flavor first and leaving the host with no named at all
+  # if the install then fails.
+  ansible.builtin.dnf:
+    name: "{{ bind_packages }}"
+    state: present
+    allowerasing: "{{ ansible_facts['distribution_major_version'] | int == 8 }}"
+
+- name: Install policycoreutils-python-utils for SELinux management
+  ansible.builtin.dnf:
+    name: policycoreutils-python-utils
+    state: present
+  when: bind_manage_selinux
+
+- name: Install geoipupdate
+  ansible.builtin.dnf:
+    name: geoipupdate
+    state: present
+  when:
+    - bind_geoip_enabled
+    - bind_geoipupdate_install
+
+- name: Install DNSSEC key management utilities
+  # dnssec-dsfromkey (used by tasks/dnssec_keys.yml to derive DS records)
+  # ships in a subpackage separate from bind-utils/bind9.16-utils.
+  ansible.builtin.dnf:
+    name: "{{ 'bind9.16-dnssec-utils' if bind_use_bind9_16 else 'bind-dnssec-utils' }}"
+    state: present
+    allowerasing: "{{ ansible_facts['distribution_major_version'] | int == 8 }}"
+  when: bind_dnssec_enable_signing
+
+- name: Generate the rndc key named.conf includes
+  # named.conf includes /etc/rndc.key, but RHEL only generates it when
+  # named.service first starts (via named-setup-rndc.service) — too late
+  # for configure.yml's named-checkconf validation on a fresh host. This is
+  # the same command RHEL's /usr/libexec/generate-rndc-key.sh runs.
+  ansible.builtin.command: rndc-confgen -a -A hmac-sha256
+  args:
+    creates: /etc/rndc.key
+  register: bind_rndc_keygen
+
+- name: Restrict the rndc key to root and named
+  ansible.builtin.file:
+    path: /etc/rndc.key
+    owner: root
+    group: "{{ bind_group }}"
+    mode: "0640"
+    setype: _default
+  # In check mode on a fresh host, the key above wasn't actually generated.
+  when: not (ansible_check_mode and bind_rndc_keygen is changed)

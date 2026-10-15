@@ -1,0 +1,52 @@
+// {{ ansible_managed }}
+// Custom dnssec-policy (KASP) definitions — named by bind_dnssec_policies,
+// referenced by name from bind_dnssec_policy / a zone's dnssec_policy in
+// zones.conf. Must be defined before zones.conf includes it (see
+// named.conf.j2's include order).
+{% for policy_name, policy in bind_dnssec_policies.items() %}
+dnssec-policy "{{ policy_name }}" {
+    keys {
+{# policy['keys'], not policy.keys — dict.keys is a real Python method, so dot access shadows the field #}
+{% for key in policy['keys'] %}
+        {{ key.role }} lifetime {{ key.lifetime }} algorithm {{ key.algorithm }}{% if key.key_size is defined %} {{ key.key_size }}{% endif %};
+{% endfor %}
+    };
+{% if policy.dnskey_ttl is defined %}
+    dnskey-ttl {{ policy.dnskey_ttl }};
+{% endif %}
+{% if policy.publish_safety is defined %}
+    publish-safety {{ policy.publish_safety }};
+{% endif %}
+{% if policy.retire_safety is defined %}
+    retire-safety {{ policy.retire_safety }};
+{% endif %}
+{% if policy.signatures_refresh is defined %}
+    signatures-refresh {{ policy.signatures_refresh }};
+{% endif %}
+{% if policy.signatures_validity is defined %}
+    signatures-validity {{ policy.signatures_validity }};
+{% endif %}
+{% if policy.signatures_validity_dnskey is defined %}
+    signatures-validity-dnskey {{ policy.signatures_validity_dnskey }};
+{% endif %}
+{% if policy.max_zone_ttl is defined %}
+    max-zone-ttl {{ policy.max_zone_ttl }};
+{% endif %}
+{% if policy.zone_propagation_delay is defined %}
+    zone-propagation-delay {{ policy.zone_propagation_delay }};
+{% endif %}
+{% if policy.parent_ds_ttl is defined %}
+    parent-ds-ttl {{ policy.parent_ds_ttl }};
+{% endif %}
+{% if policy.parent_propagation_delay is defined %}
+    parent-propagation-delay {{ policy.parent_propagation_delay }};
+{% endif %}
+{% if policy.purge_keys is defined %}
+    purge-keys {{ policy.purge_keys }};
+{% endif %}
+{% if policy.nsec3param is defined %}
+    nsec3param {{ policy.nsec3param }};
+{% endif %}
+};
+
+{% endfor %}

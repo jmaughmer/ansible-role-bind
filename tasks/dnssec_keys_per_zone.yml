@@ -1,0 +1,63 @@
+---
+- name: "{{ bind_dnssec_zone.name }}: query DNSSEC key status"
+  ansible.builtin.command: "rndc dnssec -status {{ bind_dnssec_zone.name }}"
+  register: bind_dnssec_status
+  changed_when: false
+  failed_when: false   # zone may not have finished activating its policy yet on a first run
+
+- name: "{{ bind_dnssec_zone.name }}: display DNSSEC key status"
+  ansible.builtin.debug:
+    msg: >-
+      {{ bind_dnssec_status.stdout_lines | default([])
+         + (['(stderr: ' + bind_dnssec_status.stderr + ')'] if bind_dnssec_status.stderr | default('') else []) }}
+
+# inline-signing doesn't reliably produce dsset-<zone>. files the way manual
+# dnssec-signzone does, so the KSK is found by content (DNSKEY flag 257 =
+# SEP/KSK bit set) rather than by guessing a filename or key ID.
+- name: "{{ bind_dnssec_zone.name }}: wait for a KSK key file to appear"
+  ansible.builtin.find:
+    paths: "{{ bind_dnssec_keys_dir }}"
+    patterns: "K{{ bind_dnssec_zone.name }}.+*.key"
+    # read_whole_file makes find re.search the whole file. Without it, find
+    # applies `contains` line by line with re.match — anchored at the start
+    # of the line, where a DNSKEY record line never begins.
+    contains: '\sDNSKEY\s+257\s+3\s'
+    read_whole_file: true
+  register: bind_dnssec_ksk_files
+  until: bind_dnssec_ksk_files.matched > 0
+  retries: "{{ bind_dnssec_key_wait_retries }}"
+  delay: "{{ bind_dnssec_key_wait_delay }}"
+  # Running out of retries marks an until-loop task failed whatever
+  # failed_when says. Keys not existing yet on a freshly signed zone is
+  # expected, so let the play carry on to the note below instead.
+  ignore_errors: true
+
+- name: "{{ bind_dnssec_zone.name }}: note that no KSK is available yet"
+  ansible.builtin.debug:
+    msg: >-
+      No KSK key file found yet for {{ bind_dnssec_zone.name }} in {{ bind_dnssec_keys_dir }} after
+      {{ (bind_dnssec_key_wait_retries | int) * (bind_dnssec_key_wait_delay | int) }}s of waiting.
+      dnssec-policy generates keys shortly after the zone is first loaded — re-run the play once
+      named has had time to create them.
+  when: bind_dnssec_ksk_files.matched | default(0) == 0
+
+- name: "{{ bind_dnssec_zone.name }}: derive the DS record from each KSK"
+  ansible.builtin.command: "dnssec-dsfromkey {{ item.path }}"
+  loop: "{{ bind_dnssec_ksk_files.files | default([]) }}"
+  loop_control:
+    label: "{{ item.path | default('') }}"
+  register: bind_dnssec_ds_records
+  changed_when: false
+  when: bind_dnssec_ksk_files.matched | default(0) > 0
+
+- name: "{{ bind_dnssec_zone.name }}: write DS record(s) to the control node"
+  ansible.builtin.copy:
+    content: |
+      {% for result in bind_dnssec_ds_records.results | default([]) %}
+      {{ result.stdout }}
+      {% endfor %}
+    dest: "{{ bind_dnssec_ds_output_dir }}/{{ bind_dnssec_zone.name }}.ds"
+    mode: "0640"
+  delegate_to: localhost
+  become: false
+  when: bind_dnssec_ksk_files.matched | default(0) > 0

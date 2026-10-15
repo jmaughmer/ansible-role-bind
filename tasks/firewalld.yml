@@ -1,0 +1,30 @@
+---
+# ansible_facts.services comes from chroot.yml's service_facts, which always
+# runs earlier in the play. offline: true covers firewalld being installed
+# but stopped: the permanent config is still written, and the immediate
+# (runtime) change is skipped instead of failing the play.
+- name: Note when firewalld isn't installed
+  ansible.builtin.debug:
+    msg: "firewalld isn't installed on this host; skipping firewall configuration."
+  when: "'firewalld.service' not in ansible_facts.services"
+
+- name: Open the dns service in firewalld
+  ansible.posix.firewalld:
+    service: dns
+    permanent: true
+    immediate: true
+    offline: true
+    state: enabled
+  when: "'firewalld.service' in ansible_facts.services"
+
+- name: Open the statistics-channels port in firewalld
+  ansible.posix.firewalld:
+    port: "{{ bind_statistics_channel_port }}/tcp"
+    permanent: true
+    immediate: true
+    offline: true
+    state: enabled
+  when:
+    - "'firewalld.service' in ansible_facts.services"
+    - bind_statistics_channels_enabled
+    - bind_statistics_channel_address not in ['127.0.0.1', '::1']

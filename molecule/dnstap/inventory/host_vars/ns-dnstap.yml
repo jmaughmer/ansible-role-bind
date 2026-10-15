@@ -1,0 +1,27 @@
+---
+# Authoritative server capturing both queries and responses, with export on.
+bind_dns_role: authoritative
+# dnstap needs BIND 9.12+: on EL8 that means bind9.16.
+bind_use_bind9_16: "{{ ansible_facts['distribution_major_version'] | int == 8 }}"
+bind_acls:
+  trusted: [127.0.0.1, "::1"]
+  transfer_hosts: []
+  recursion_clients: []
+  dns64_clients: []
+bind_dnstap_enabled: true
+# Recursion is off, so named logs the incoming queries as AUTH_QUERY; a
+# "client query" type would capture nothing here.
+bind_dnstap_types:
+  - auth query
+  - client response
+bind_dnstap_export_enabled: true
+bind_zones:
+  - name: dnstap.test
+    type: master
+    primary_ns: ns1.dnstap.test
+    nameservers: [ns1.dnstap.test]
+    records:
+      - { name: ns1, type: A, value: 10.153.56.10 }
+      - { name: www, type: A, value: 10.153.56.20 }
+      - { name: mail, type: A, value: 10.153.56.25 }
+      - { name: "@", type: MX, value: "10 mail.dnstap.test." }

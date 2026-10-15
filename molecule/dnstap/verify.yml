@@ -1,0 +1,276 @@
+---
+- name: Verify dnstap capture, the converter and the export
+  hosts: all
+  become: true
+  gather_facts: true
+  vars:
+    converter: /usr/local/libexec/bind-dnstap-to-ndjson
+    # The interpreter the role's service runs the converter with.
+    py: "{{ '/usr/libexec/platform-python' if ansible_facts['distribution_major_version'] | int == 8 else '/usr/bin/python3' }}"
+    fixture: /tmp/dnstap-fixture
+  tasks:
+    # ------------------------------------------------------------ 1. live export
+    - name: Check the export timer is enabled and active
+      ansible.builtin.command: "systemctl {{ item.check }} bind-dnstap-ndjson.timer"
+      register: timer_state
+      changed_when: false
+      failed_when: timer_state.stdout != item.expect
+      loop:
+        - { check: is-enabled, expect: enabled }
+        - { check: is-active, expect: active }
+
+    - name: Send queries through named (A, MX, NXDOMAIN, and AAAA over TCP)
+      ansible.builtin.command: "dig {{ item }} @127.0.0.1"
+      changed_when: false
+      loop:
+        - www.dnstap.test A
+        - dnstap.test MX
+        - nope.dnstap.test A
+        - +tcp www.dnstap.test AAAA
+
+    - name: Run the converter now rather than waiting for its timer
+      ansible.builtin.systemd:
+        name: bind-dnstap-ndjson.service
+        state: started
+      changed_when: false
+
+    - name: Read the exported events
+      ansible.builtin.slurp:
+        src: /var/log/named/dnstap.ndjson
+      register: export_file
+
+    - name: Check the exported answers, field by field
+      vars:
+        events: "{{ (export_file.content | b64decode).splitlines() | map('from_json') | list }}"
+        responses: "{{ events | selectattr('dns.type', 'equalto', 'answer') | list }}"
+        queries: "{{ events | selectattr('dns.type', 'equalto', 'query') | list }}"
+        www_a: "{{ responses | selectattr('dns.question.name', 'equalto', 'www.dnstap.test')
+                   | selectattr('dns.question.type', 'equalto', 'A') | list }}"
+        www_aaaa: "{{ responses | selectattr('dns.question.name', 'equalto', 'www.dnstap.test')
+                      | selectattr('dns.question.type', 'equalto', 'AAAA') | list }}"
+        mx: "{{ responses | selectattr('dns.question.type', 'equalto', 'MX') | list }}"
+        nope: "{{ responses | selectattr('dns.question.name', 'equalto', 'nope.dnstap.test') | list }}"
+      ansible.builtin.assert:
+        that:
+          - www_a | map(attribute='dns.answers') | flatten | map(attribute='data') | list is contains('10.153.56.20')
+          - www_a[0].dns.response_code == 'NOERROR'
+          - www_a[0].client.ip == '127.0.0.1'
+          - mx | map(attribute='dns.answers') | flatten | map(attribute='data') | list is contains('10 mail.dnstap.test')
+          - nope | map(attribute='dns.response_code') | list is contains('NXDOMAIN')
+          - www_aaaa | map(attribute='network.transport') | list is contains('tcp')
+          - queries | map(attribute='dns.question.name') | list is contains('www.dnstap.test')
+          - queries | map(attribute='bind.dnstap.message_type') | unique | list == ['AUTH_QUERY']
+          - queries | selectattr('dns.response_code', 'defined') | list | length == 0
+          - responses | map(attribute='bind.dnstap.message_type') | unique | list == ['CLIENT_RESPONSE']
+          # each answer's latency, from pairing it with its AUTH_QUERY
+          - responses | rejectattr('event.duration', 'defined') | list | length == 0
+          - queries | selectattr('event.duration', 'defined') | list | length == 0
+          - events | rejectattr('observer.hostname', 'defined') | list | length == 0
+          - events | rejectattr('@timestamp', 'search', 'Z$') | list | length == 0
+        fail_msg: "Unexpected export content: {{ events | to_json }}"
+
+    - name: Check the export file belongs to named and isn't world-readable
+      ansible.builtin.stat:
+        path: /var/log/named/dnstap.ndjson
+      register: export_stat
+      failed_when: export_stat.stat.pw_name != 'named' or export_stat.stat.mode != '0640'
+
+    - name: Run the converter again with no new traffic
+      ansible.builtin.systemd:
+        name: bind-dnstap-ndjson.service
+        state: started
+      changed_when: false
+
+    - name: Read the exported events again
+      ansible.builtin.slurp:
+        src: /var/log/named/dnstap.ndjson
+      register: export_again
+
+    - name: Check the second run exported nothing twice
+      ansible.builtin.assert:
+        that:
+          # Only the converter's own rndc roll can add events (none: no queries
+          # since), so the line count is unchanged.
+          - (export_again.content | b64decode).splitlines() | length == (export_file.content | b64decode).splitlines() | length
+
+    # ------------------------------------- 2. converter on the host's own Python
+    - name: Start from a clean fixture directory
+      ansible.builtin.file:
+        path: "{{ fixture }}"
+        state: absent
+
+    - name: Create the fixture directory
+      ansible.builtin.file:
+        path: "{{ fixture }}"
+        state: directory
+        mode: "0755"
+
+    - name: Copy the dnstap fixture generator
+      ansible.builtin.copy:
+        src: make_test_dnstap.py
+        dest: "{{ fixture }}/make_test_dnstap.py"
+        mode: "0755"
+
+    - name: Write the fixture dnstap files (one set per test case)
+      ansible.builtin.command: "{{ py }} {{ fixture }}/make_test_dnstap.py {{ fixture }}/{{ item }}"
+      changed_when: true
+      loop: [content, rotate]
+
+    # The first run sees only dnstap.tap.2, whose AUTH_QUERY is answered in
+    # .1; the second run must pair them through the state file.
+    - name: Hold back the newer fixture files for a second run
+      ansible.builtin.shell: >-
+        mkdir {{ fixture }}/content/later &&
+        mv {{ fixture }}/content/dnstap.tap.1 {{ fixture }}/content/dnstap.tap.0 {{ fixture }}/content/later/
+      changed_when: true
+
+    - name: Convert the oldest fixture file
+      ansible.builtin.command: &convert_content >-
+        {{ py }} {{ converter }} --dnstap-file {{ fixture }}/content/dnstap.tap
+        --output {{ fixture }}/content/out.ndjson --state-file {{ fixture }}/content/state.json
+      register: convert_first
+      changed_when: true
+      failed_when: false
+
+    - name: Check the run reported the truncated file and kept its good frame
+      ansible.builtin.assert:
+        that:
+          - convert_first.rc == 1                     # non-zero so systemd flags the bad file
+          - "'converted 1 dnstap messages' in convert_first.stdout"
+          - "'dnstap.tap.2' in convert_first.stderr and 'ends mid-frame' in convert_first.stderr"
+        fail_msg: "rc={{ convert_first.rc }} stdout={{ convert_first.stdout }} stderr={{ convert_first.stderr }}"
+
+    - name: Read the state file
+      ansible.builtin.slurp:
+        src: "{{ fixture }}/content/state.json"
+      register: fixture_state
+
+    - name: Check the unanswered query was saved for the next run
+      vars:
+        pending: "{{ (fixture_state.content | b64decode | from_json).pending }}"
+      ansible.builtin.assert:
+        that:
+          - pending | length == 1
+          - pending[0][0] == ['CLIENT', '10.0.0.5', 51234, 1, 48879, 'www.example.com', 'A']
+        fail_msg: "pending: {{ pending | to_json }}"
+
+    - name: Put the newer fixture files back
+      ansible.builtin.shell: mv {{ fixture }}/content/later/* {{ fixture }}/content/
+      changed_when: true
+
+    - name: Convert the newer fixture files
+      ansible.builtin.command: *convert_content
+      register: convert_second
+      changed_when: true
+      failed_when: convert_second.rc != 0 or 'converted 5 dnstap messages' not in convert_second.stdout
+
+    - name: Convert the same fixtures again
+      ansible.builtin.command: *convert_content
+      register: convert_again
+      changed_when: false
+      failed_when: convert_again.rc != 0 or 'converted 0 dnstap messages' not in convert_again.stdout
+
+    - name: Read the converted fixtures
+      ansible.builtin.slurp:
+        src: "{{ fixture }}/content/out.ndjson"
+      register: fixture_out
+
+    - name: Check the decoded fixture messages
+      vars:
+        events: "{{ (fixture_out.content | b64decode).splitlines() | map('from_json') | list }}"
+        answers: "{{ events | selectattr('dns.type', 'equalto', 'answer') | list }}"
+        query_msgs: "{{ events | selectattr('dns.type', 'equalto', 'query') | list }}"
+        cname_chain: "{{ answers | selectattr('dns.id', 'equalto', 48879) | first }}"
+        nxdomain: "{{ answers | selectattr('dns.response_code', 'equalto', 'NXDOMAIN') | list }}"
+        v6: "{{ answers | selectattr('client.ip', 'equalto', '2001:db8::5') | first }}"
+        v6_data: "{{ v6.dns.answers | map(attribute='data') | list }}"
+        # TXT presentation: quotes and backslashes inside a string are escaped.
+        expected_txt: '"v=spf1 -all" "a\"b\\c"'
+      ansible.builtin.assert:
+        that:
+          - events | length == 6
+          - answers | length == 3
+          # a compressed CNAME chain with EDNS (DO bit, 1232-byte buffer)
+          - cname_chain.dns.answers | map(attribute='data') | list == ['web.example.com', '192.0.2.1', '192.0.2.2']
+          - cname_chain.dns.resolved_ip == ['192.0.2.1', '192.0.2.2']
+          - "'DO' in cname_chain.dns.header_flags"
+          - cname_chain.bind.dnstap.edns.udp_size == 1232
+          - cname_chain.bind.dnstap.authorities[0].data == 'ns1.example.com'
+          - v6.network.transport == 'tcp' and v6.network.type == 'ipv6'
+          - expected_txt in v6_data
+          - "'10 mail.example.com' in v6_data and '2001:db8::1' in v6_data"
+          - v6_data | select('match', '^A 13 2 300 \\d{14} \\d{14} 12345 example\\.com AQID$') | list | length == 1
+          - query_msgs | map(attribute='bind.dnstap.message_type') | list == ['AUTH_QUERY', 'CLIENT_QUERY', 'CLIENT_QUERY']
+          # latency from query/response pairing: across runs (AUTH_QUERY in
+          # tap.2, answer in tap.1) and within a file (IPv6/TCP pair in tap.0)
+          - cname_chain.event.duration == 3500000
+          - v6.event.duration == 1200000
+          # the NXDOMAIN's query was logged after it, so it stays unpaired
+          - nxdomain | length == 1 and nxdomain[0].event.duration is not defined
+          - query_msgs | selectattr('event.duration', 'defined') | list | length == 0
+        fail_msg: "Unexpected converter output: {{ events | to_json }}"
+
+    - name: Convert with a tiny output size to force rotation
+      ansible.builtin.command: >-
+        {{ py }} {{ converter }} --dnstap-file {{ fixture }}/rotate/dnstap.tap
+        --output {{ fixture }}/rotate/out.ndjson --state-file {{ fixture }}/rotate/state.json
+        --max-size 1k --backups 2
+      changed_when: true
+      failed_when: false
+
+    - name: Check the output rotated and kept only two backups
+      ansible.builtin.stat:
+        path: "{{ fixture }}/rotate/{{ item.file }}"
+      register: rotated
+      failed_when: rotated.stat.exists != item.exists
+      loop:
+        - { file: out.ndjson, exists: true }
+        - { file: out.ndjson.1, exists: true }
+        - { file: out.ndjson.2, exists: true }
+        - { file: out.ndjson.3, exists: false }
+
+    # --------------------------------------------- 4. EL8: dnstap needs 9.16
+    - name: Check enabling dnstap on EL8's base BIND 9.11 is refused
+      when: ansible_facts['distribution_major_version'] | int == 8
+      block:
+        - name: Apply the role on EL8 without bind9.16 (expected to fail)
+          ansible.builtin.include_role:
+            name: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}"
+          vars:
+            bind_use_bind9_16: false
+
+        - name: Fail, since the role should have refused
+          ansible.builtin.fail:
+            msg: The role accepted dnstap on BIND 9.11.
+      rescue:
+        - name: Check it was refused with the explanation
+          ansible.builtin.assert:
+            that:
+              - ansible_failed_result.msg is search('BIND 9.11')
+              - ansible_failed_result.msg is search('bind_use_bind9_16')
+            fail_msg: "Failed for another reason: {{ ansible_failed_result.msg }}"
+
+    # ------------------------------------------- 3. turning the export off
+    - name: Apply the role with the export turned off
+      ansible.builtin.include_role:
+        name: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}"
+      vars:
+        bind_dnstap_export_enabled: false
+
+    - name: Check the timer, units and converter were removed and the data kept
+      ansible.builtin.stat:
+        path: "{{ item.path }}"
+      register: teardown
+      failed_when: teardown.stat.exists != item.exists
+      loop:
+        - { path: /etc/systemd/system/bind-dnstap-ndjson.timer, exists: false }
+        - { path: /etc/systemd/system/bind-dnstap-ndjson.service, exists: false }
+        - { path: "{{ converter }}", exists: false }
+        - { path: /var/log/named/dnstap.ndjson, exists: true }   # exported data stays
+        - { path: /var/log/named/dnstap.tap, exists: true }      # capture itself stays on
+
+    - name: Check named kept running
+      ansible.builtin.command: systemctl is-active named
+      register: named_active
+      changed_when: false
+      failed_when: named_active.stdout != 'active'

@@ -1,0 +1,24 @@
+// {{ ansible_managed }}
+// One channel/file per category. Every line still carries its category and
+// severity (print-category/print-severity yes), so a filestream input that
+// globs "{{ bind_log_dir }}/*.log" feeds the same
+// bind-elasticsearch-pipeline ingest pipeline as the consolidated layout —
+// only the "Paths" setting in Fleet needs to change.
+logging {
+{% for category in bind_log_categories %}
+    channel {{ category }}_log {
+        file "{{ bind_log_dir }}/{{ category }}.log" versions {{ bind_log_file_versions }} size {{ bind_log_file_size }};
+        print-time {{ (('yes' if bind_log_print_time else 'no') if bind_log_print_time is boolean else bind_log_print_time) }};
+        print-severity yes;
+        print-category yes;
+        severity {{ bind_log_severity }};
+{% if bind_log_buffered %}
+        buffered yes;
+{% endif %}
+    };
+{% endfor %}
+
+{% for category in bind_log_categories %}
+    category {{ category }} { {{ category }}_log; };
+{% endfor %}
+};

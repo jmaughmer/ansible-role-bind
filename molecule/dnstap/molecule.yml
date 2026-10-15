@@ -1,0 +1,46 @@
+---
+# dnstap capture and its Elasticsearch export, in depth, on one
+# authoritative server (the default scenario only checks one answer gets
+# through on the resolver). verify.yml:
+#   1. drives real queries through named and checks the exported JSON
+#      field by field, its ownership/mode, and that a re-run adds nothing;
+#   2. runs the converter on prepared dnstap files under the host's own
+#      Python (platform-python 3.6 on EL8): name compression, TXT escaping,
+#      RRSIG, IPv6/TCP, a truncated file, skipped files, output rotation,
+#      and answer latency from pairing queries with responses (within a
+#      file, and across runs through the state file);
+#   3. turns the export off and checks the timer, units and script go while
+#      the capture and already-exported JSON stay;
+#   4. on EL8, checks enabling dnstap on base BIND 9.11 fails with its
+#      explanation.
+#   molecule test -s dnstap
+# MOLECULE_DISTRO picks the EL release, as in the default scenario.
+role_name_check: 1
+
+dependency:
+  name: galaxy
+  options:
+    requirements-file: ${MOLECULE_SCENARIO_DIRECTORY}/../default/requirements.yml
+
+driver:
+  name: podman
+
+platforms:
+  - name: ns-dnstap
+    image: "docker.io/geerlingguy/docker-${MOLECULE_DISTRO:-rockylinux9}-ansible:latest"
+    pre_build_image: true
+    override_command: false   # keep the image's own CMD: systemd as PID 1
+    systemd: always
+    privileged: true          # lets systemd sandbox the converter service
+
+provisioner:
+  name: ansible
+  playbooks:
+    prepare: ../default/prepare.yml   # Python 3.11 on EL8 for ansible-core 2.17+
+  inventory:
+    links:
+      group_vars: ../default/inventory/group_vars/
+      host_vars: inventory/host_vars/
+
+verifier:
+  name: ansible

@@ -1,0 +1,8 @@
+// {{ ansible_managed }}
+statistics-channels {
+    inet {{ bind_statistics_channel_address }} port {{ bind_statistics_channel_port }} allow {
+{% for ip in bind_statistics_channel_allow %}
+        {{ ip }};
+{% endfor %}
+    };
+};

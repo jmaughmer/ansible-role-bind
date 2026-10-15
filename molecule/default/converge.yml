@@ -1,0 +1,37 @@
+---
+# One play per server, primary first: the secondary's first zone transfers
+# and the resolver's forward zone both need the primary already answering.
+# The role is included by the repository's path, which works whatever the
+# roles path is (newer Molecule releases no longer add the project's parent
+# directory to it).
+
+# Each server's config refers to the others' addresses (test_*_ip in
+# inventory/group_vars/all.yml), so gather everyone's facts up front.
+- name: Gather facts from every instance
+  hosts: all
+  gather_facts: true
+  tasks: []
+
+- name: Converge the primary
+  hosts: ns-master
+  become: true
+  tasks:
+    - name: Apply the role
+      ansible.builtin.include_role:
+        name: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}"
+
+- name: Converge the secondary
+  hosts: ns-slave
+  become: true
+  tasks:
+    - name: Apply the role
+      ansible.builtin.include_role:
+        name: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}"
+
+- name: Converge the resolver
+  hosts: resolver
+  become: true
+  tasks:
+    - name: Apply the role
+      ansible.builtin.include_role:
+        name: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}"

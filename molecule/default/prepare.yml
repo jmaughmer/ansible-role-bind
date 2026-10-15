@@ -1,0 +1,18 @@
+---
+# ansible-core 2.17+ can't manage hosts whose only Python is 3.6 — RHEL 8's
+# default /usr/bin/python3. On EL8, install Python 3.11 from AppStream with
+# raw (which needs no Python on the host); Ansible's interpreter discovery
+# then picks it over 3.6. Real RHEL 8 hosts managed by a current
+# ansible-core need the same (see the README's "Requirements").
+- name: Prepare
+  hosts: all
+  gather_facts: false
+  tasks:
+    - name: Install Python 3.11 on EL8 hosts
+      # Explicit /bin/sh -c: the podman connection runs raw commands without
+      # a shell, so a bare "if ..." would be taken as a program name.
+      ansible.builtin.raw: >-
+        /bin/sh -c "if grep -q ' release 8' /etc/redhat-release && ! rpm -q --quiet python3.11;
+        then dnf -y -q install python3.11 && echo installed; fi"
+      register: el8_python
+      changed_when: "'installed' in el8_python.stdout"

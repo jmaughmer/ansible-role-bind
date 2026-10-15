@@ -1,0 +1,8 @@
+---
+# Example playbook. Assumes the role has been fetched into roles/bind_dns
+# (see requirements.yml in this directory) or symlinked there for local dev.
+- name: Configure BIND DNS servers
+  hosts: bind_dns
+  become: true
+  roles:
+    - role: bind_dns

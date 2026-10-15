@@ -1,0 +1,10 @@
+---
+# ansible-galaxy install -r requirements.yml -p roles/
+roles:
+  - src: https://github.com/jmaughmer/ansible-role-bind.git
+    name: bind_dns
+    version: main
+
+collections:
+  - name: ansible.posix
+  - name: community.general

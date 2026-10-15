@@ -1,0 +1,11 @@
+---
+- name: Ensure DNSSEC key directory ownership is correct for named to manage keys
+  ansible.builtin.file:
+    path: "{{ bind_dnssec_keys_dir }}"
+    state: directory
+    owner: "{{ bind_user }}"
+    group: "{{ bind_group }}"
+    mode: "0750"
+
+# Version compatibility for dnssec-policy is enforced in assertions.yml,
+# which runs before this file.

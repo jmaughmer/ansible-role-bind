@@ -1,0 +1,80 @@
+---
+- name: Gather SELinux facts
+  ansible.builtin.setup:
+    filter: ansible_selinux
+  when: ansible_facts.selinux is not defined
+
+- name: Record whether SELinux is enabled
+  ansible.builtin.set_fact:
+    bind_selinux_enabled: "{{ (ansible_facts.selinux | default({})).status | default('disabled') == 'enabled' }}"
+
+- name: Note when SELinux is disabled
+  ansible.builtin.debug:
+    msg: "SELinux is disabled on this host; skipping SELinux configuration."
+  when: not bind_selinux_enabled
+
+- name: Set named_write_master_zones SELinux boolean
+  # Lets named write named_zone_t files: master zone journals, and
+  # inline-signing's .signed/.jnl files next to the zone file. Slave zone
+  # files, DNSSEC keys and managed keys don't need it — they're labeled
+  # named_cache_t below.
+  ansible.posix.seboolean:
+    name: named_write_master_zones
+    state: true
+    persistent: true
+  when:
+    - bind_selinux_enabled
+    - bind_dnssec_enable_signing or bind_zones | selectattr('type', 'equalto', 'master') | list | length > 0
+
+- name: Set SELinux file contexts for BIND's directories
+  # named_cache_t is what RHEL itself uses for the directories named writes
+  # to (/var/named/slaves, /var/named/dynamic, /var/named/data): named_t can
+  # always write it, whereas named_zone_t is only writable with
+  # named_write_master_zones and named_conf_t is read-only to named.
+  vars:
+    bind_selinux_fcontexts:
+      - { path: "{{ bind_log_dir }}", setype: named_log_t }
+      - { path: "{{ bind_zones_dir }}", setype: named_zone_t }
+      - { path: "{{ bind_slave_zones_dir }}", setype: named_cache_t }
+      - { path: "{{ bind_dnssec_keys_dir }}", setype: named_cache_t }
+      - { path: "{{ bind_managed_keys_dir }}", setype: named_cache_t }
+  community.general.sefcontext:
+    target: "{{ item.path }}(/.*)?"
+    setype: "{{ item.setype }}"
+    state: present
+  loop: "{{ bind_selinux_fcontexts }}"
+  loop_control:
+    label: "{{ item.path }} -> {{ item.setype }}"
+  register: bind_sefcontext
+  when: bind_selinux_enabled
+
+- name: Relabel directories whose SELinux file context changed
+  # Right away rather than from a handler: handlers run at the end of the
+  # play, after service.yml has already started named against the old labels.
+  ansible.builtin.command: "restorecon -R {{ item.item.path }}"
+  loop: "{{ bind_sefcontext.results | default([]) | selectattr('changed') | list }}"
+  loop_control:
+    label: "{{ item.item.path }}"
+
+- name: Allow named to bind the statistics-channels port
+  # named's statistics-channels is a minimal HTTP server; the port gets the
+  # http_port_t label, and RHEL's bind policy only lets named_t bind
+  # http_port_t when the named_tcp_bind_http_port boolean (default off) is
+  # on — the label alone isn't enough.
+  community.general.seport:
+    ports: "{{ bind_statistics_channel_port }}"
+    proto: tcp
+    setype: http_port_t
+    state: present
+  when:
+    - bind_selinux_enabled
+    - bind_statistics_channels_enabled
+
+- name: Set named_tcp_bind_http_port SELinux boolean for the statistics channel
+  ansible.posix.seboolean:
+    name: named_tcp_bind_http_port
+    state: true
+    persistent: true
+  when:
+    - bind_selinux_enabled
+    - bind_statistics_channels_enabled

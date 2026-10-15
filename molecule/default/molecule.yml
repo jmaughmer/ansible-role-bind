@@ -1,0 +1,58 @@
+---
+# Three systemd containers (rootless Podman is fine) on one network,
+# mirroring examples/:
+#   ns-master  DNSSEC-signing primary, role-managed zones
+#   ns-slave   secondary that transfers every zone from it
+#   resolver   caching resolver forwarding example.test to the primary,
+#              with DNS64 and dnstap export
+# MOLECULE_DISTRO picks the EL release (default rockylinux9; also
+# rockylinux8, rockylinux10) — see the README's "Testing" section. The
+# playbooks, inventory and zones.d here are shared with the docker scenario.
+#
+# Inside containers SELinux is off and firewalld isn't installed, so this
+# exercises the role's skip paths for both. Chroot and GeoIP have their own
+# scenarios (molecule/chroot/, molecule/geoip/).
+
+# meta/main.yml has no galaxy namespace; warn rather than fail on it.
+role_name_check: 1
+
+dependency:
+  name: galaxy   # installs requirements.yml next to this file
+
+driver:
+  name: podman
+
+platforms:
+  - name: ns-master
+    image: "docker.io/geerlingguy/docker-${MOLECULE_DISTRO:-rockylinux9}-ansible:latest"
+    pre_build_image: true
+    override_command: false   # keep the image's own CMD: systemd as PID 1
+    systemd: always
+    privileged: true          # lets systemd sandbox services (the dnstap converter)
+    network: bind_dns_molecule   # created by the driver from the first platform
+
+  - name: ns-slave
+    image: "docker.io/geerlingguy/docker-${MOLECULE_DISTRO:-rockylinux9}-ansible:latest"
+    pre_build_image: true
+    override_command: false
+    systemd: always
+    privileged: true
+    network: bind_dns_molecule
+
+  - name: resolver
+    image: "docker.io/geerlingguy/docker-${MOLECULE_DISTRO:-rockylinux9}-ansible:latest"
+    pre_build_image: true
+    override_command: false
+    systemd: always
+    privileged: true
+    network: bind_dns_molecule
+
+provisioner:
+  name: ansible
+  inventory:
+    links:
+      group_vars: inventory/group_vars/
+      host_vars: inventory/host_vars/
+
+verifier:
+  name: ansible

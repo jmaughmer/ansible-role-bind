@@ -1,0 +1,67 @@
+---
+- name: Verify chrooted BIND
+  hosts: all
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Check named-chroot is active and enabled
+      ansible.builtin.command: "systemctl {{ item.check }} named-chroot"
+      register: chroot_unit
+      changed_when: false
+      failed_when: chroot_unit.stdout != item.expect
+      loop:
+        - { check: is-active, expect: active }
+        - { check: is-enabled, expect: enabled }
+
+    - name: Check plain named.service was stopped and disabled
+      ansible.builtin.command: "systemctl {{ item.check }} named"
+      register: plain_unit
+      changed_when: false
+      failed_when: plain_unit.stdout != item.expect
+      loop:
+        - { check: is-active, expect: inactive }
+        - { check: is-enabled, expect: disabled }
+
+    - name: Check named's root directory is the chroot
+      ansible.builtin.shell: readlink "/proc/$(systemctl show --property MainPID --value named-chroot)/root"
+      register: named_root
+      changed_when: false
+      failed_when: named_root.stdout != '/var/named/chroot'
+
+    - name: Check the chroot's bind mounts are in place
+      ansible.builtin.command: "findmnt --noheadings --output TARGET {{ item }}"
+      changed_when: false
+      loop:
+        - /var/named/chroot/var/log/named     # bind_log_dir, added by the role
+        - /var/named/chroot/srv/named-extra   # bind_chroot_extra_paths
+        - /var/named/chroot/etc/named         # RHEL's default list: the role's config
+        - /var/named/chroot/var/named         # RHEL's default list: zones and keys
+
+    - name: Check each added path is listed exactly once in named-chroot.files
+      ansible.builtin.command: "grep -c -x {{ item }} /etc/named-chroot.files"
+      register: listed
+      changed_when: false
+      failed_when: listed.stdout != '1'
+      loop: [/var/log/named, /srv/named-extra]
+
+    - name: Check rndc reaches the chrooted named
+      ansible.builtin.command: rndc status
+      changed_when: false
+
+    - name: Wait for chroot.test to answer, signed by keys named generated inside the chroot
+      ansible.builtin.command: dig +dnssec +norec @127.0.0.1 www.chroot.test A
+      register: signed_answer
+      changed_when: false
+      until: "'10.153.54.20' in signed_answer.stdout and 'RRSIG' in signed_answer.stdout"
+      retries: 30
+      delay: 2
+
+    - name: Check queries are logged through the bind-mounted log directory
+      ansible.builtin.command: "grep -c 'query: www.chroot.test' /var/log/named/queries.log"
+      changed_when: false
+
+    - name: Check dnstap writes through the bind-mounted log directory
+      ansible.builtin.stat:
+        path: /var/log/named/dnstap.tap
+      register: dnstap_file
+      failed_when: not dnstap_file.stat.exists

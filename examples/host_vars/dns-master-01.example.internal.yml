@@ -1,0 +1,88 @@
+---
+# Master: authoritative for example.com, allows AXFR/IXFR to the slave only.
+bind_dns_role: authoritative
+
+bind_acls:
+  trusted:
+    - 127.0.0.1
+    - ::1
+  transfer_hosts:
+    - 10.0.1.11         # dns-slave-01
+  recursion_clients: []  # unused — recursion stays off on authoritative hosts
+  dns64_clients: []       # unused
+
+bind_notify: true
+
+bind_zone_statistics: true
+bind_statistics_channels_enabled: true
+bind_statistics_channel_address: 127.0.0.1
+bind_statistics_channel_port: 8053
+
+# DNSSEC signing requires BIND 9.16+. On RHEL 9+ that's the base 'bind'
+# package; on RHEL 8 bind_use_bind9_16 auto-enables to pull in bind9.16.
+bind_dnssec_enable_signing: true
+bind_dnssec_policy: strict   # our own policy below, instead of BIND's built-in "default"
+
+# Explicit KSK/ZSK control instead of BIND's opaque built-in "default"
+# policy (a single unlimited-lifetime CSK) — a real KSK/ZSK split with a
+# yearly KSK rollover and a 30-day ZSK rollover.
+bind_dnssec_policies:
+  strict:
+    keys:
+      - { role: ksk, lifetime: P1Y, algorithm: ecdsap256sha256 }
+      - { role: zsk, lifetime: P30D, algorithm: ecdsap256sha256 }
+    signatures_validity: P14D
+    max_zone_ttl: P1D
+
+# Surfaces `rndc dnssec -status` and writes each signed zone's current DS
+# record to ./dnssec-ds-records/<zone>.ds on the control node after every
+# run — see README's "DNSSEC key operations".
+bind_dnssec_manage_keys: true
+
+# Internet-facing master — run BIND chrooted. Needs nothing else: this
+# role's own paths are already covered by RHEL's default chroot file list.
+bind_chroot_enabled: true
+
+# At scale, keep the bulk of your zones as small per-zone files instead of
+# growing bind_zones: below indefinitely — see README's "Managing many
+# zones". Additive with bind_zones: two more zones (one bare dict, one file
+# holding a forward+reverse pair) live under examples/zones.d/ and get
+# merged in alongside the two defined inline here.
+bind_zones_vars_dir: "{{ playbook_dir }}/zones.d"
+
+bind_zones:
+  - name: example.com
+    type: master
+    allow_transfer_acl: transfer_hosts
+    also_notify:
+      - 10.0.1.11
+    dnssec: true
+    # Everything below is optional — omit `records`/`primary_ns`/etc. entirely
+    # to manage the zone file out of band; the role will just check it exists.
+    primary_ns: ns1.example.com
+    admin_email: hostmaster.example.com
+    nameservers:
+      - ns1.example.com
+      - ns2.example.com
+    records:
+      - { name: ns1, type: A, value: 10.0.1.10 }
+      - { name: ns2, type: A, value: 10.0.1.11 }
+      - { name: www, type: A, value: 10.0.1.20, comment: "public website — see CHG1234" }
+      - { name: "@", type: MX, value: "10 mail.example.com.", comment: "Google Workspace" }
+
+  # Reverse zone for the 10.0.1.0/24 the records above live in. Same
+  # bind_zones shape as any forward zone — see README's "Reverse zones".
+  - name: 1.0.10.in-addr.arpa
+    type: master
+    allow_transfer_acl: transfer_hosts
+    also_notify:
+      - 10.0.1.11
+    primary_ns: ns1.example.com
+    admin_email: hostmaster.example.com
+    nameservers:
+      - ns1.example.com
+      - ns2.example.com
+    records:
+      - { name: "10", type: PTR, value: "ns1.example.com." }
+      - { name: "11", type: PTR, value: "ns2.example.com." }
+      - { name: "20", type: PTR, value: "www.example.com." }

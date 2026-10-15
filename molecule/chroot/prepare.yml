@@ -1,0 +1,21 @@
+---
+- name: Install Python 3.11 on EL8 hosts
+  ansible.builtin.import_playbook: ../default/prepare.yml
+
+# Start from an ordinary, unchrooted deployment, so converge.yml exercises
+# switching an existing host over to named-chroot.
+- name: Deploy BIND without chroot first
+  hosts: all
+  become: true
+  tasks:
+    - name: Create the extra directory host_vars bind-mounts into the chroot
+      ansible.builtin.file:
+        path: /srv/named-extra
+        state: directory
+        mode: "0755"
+
+    - name: Apply the role with chroot off
+      ansible.builtin.include_role:
+        name: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}"
+      vars:
+        bind_chroot_enabled: false

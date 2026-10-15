@@ -1,0 +1,58 @@
+---
+- name: Detect the installed BIND flavor
+  ansible.builtin.import_tasks: detect.yml
+
+- name: Load per-zone files from bind_zones_vars_dir into bind_zones
+  ansible.builtin.import_tasks: load_zones.yml
+
+- name: Assert configuration is internally consistent
+  ansible.builtin.import_tasks: assertions.yml
+
+- name: Install BIND packages
+  ansible.builtin.import_tasks: install.yml
+
+- name: Create BIND directories
+  ansible.builtin.import_tasks: directories.yml
+
+- name: Configure chroot environment
+  ansible.builtin.import_tasks: chroot.yml
+
+- name: Configure GeoIP2 database updates
+  ansible.builtin.import_tasks: geoip.yml
+  when: bind_geoip_enabled
+
+- name: Prepare DNSSEC key storage
+  ansible.builtin.import_tasks: dnssec.yml
+  when: bind_dnssec_enable_signing
+
+- name: Render named configuration
+  ansible.builtin.import_tasks: configure.yml
+
+- name: Render zone files and definitions
+  ansible.builtin.import_tasks: zones.yml
+
+- name: Apply SELinux policy
+  ansible.builtin.import_tasks: selinux.yml
+  when: bind_manage_selinux
+
+- name: Open firewalld ports
+  ansible.builtin.import_tasks: firewalld.yml
+  when: bind_manage_firewalld
+
+- name: Validate and start named
+  ansible.builtin.import_tasks: service.yml
+
+# Apply any pending reload/restart now rather than at the end of the play:
+# the DNSSEC report below needs named running the config this play just
+# wrote (a zone that was only just given dnssec: true has no keys until
+# named reloads), and a failure further down must not drop the reload.
+- name: Apply pending named reloads before reporting on the running server
+  ansible.builtin.meta: flush_handlers
+
+- name: Export dnstap captures to Elasticsearch
+  ansible.builtin.import_tasks: dnstap_export.yml
+
+- name: Report DNSSEC key status and DS records
+  ansible.builtin.import_tasks: dnssec_keys.yml
+  when: bind_dnssec_enable_signing and bind_dnssec_manage_keys
+  tags: [dnssec_keys]

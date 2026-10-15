@@ -1,0 +1,5 @@
+# Python packages for running the Molecule tests (see README "Testing"):
+#   pip install -r molecule/requirements.txt
+ansible-core>=2.15
+molecule>=6.0
+molecule-plugins[podman,docker]>=23.5

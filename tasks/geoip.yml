@@ -1,0 +1,37 @@
+---
+- name: Create GeoIP database directory
+  ansible.builtin.file:
+    path: "{{ bind_geoip_directory }}"
+    state: directory
+    owner: root
+    group: "{{ bind_group }}"
+    mode: "0750"
+
+- name: Template geoipupdate configuration
+  ansible.builtin.template:
+    src: GeoIP.conf.j2
+    dest: /etc/GeoIP.conf
+    owner: root
+    group: root
+    mode: "0640"
+  # The file holds the MaxMind license key — keep it out of --diff output.
+  diff: false
+  when: bind_geoipupdate_install
+
+- name: Warn if GeoIP is enabled without geoipupdate managing databases
+  ansible.builtin.debug:
+    msg: >-
+      bind_geoip_enabled is true but bind_geoipupdate_install is false. This role will not
+      populate {{ bind_geoip_directory }} — place GeoIP2/GeoLite2 .mmdb files there yourself
+      (MaxMind account required), or set bind_geoipupdate_install: true.
+  when: not bind_geoipupdate_install
+
+- name: Run geoipupdate to fetch/refresh GeoIP2 databases
+  ansible.builtin.command: geoipupdate -f /etc/GeoIP.conf -d "{{ bind_geoip_directory }}"
+  register: bind_geoipupdate_result
+  changed_when: "'download' in bind_geoipupdate_result.stdout | lower or 'updat' in bind_geoipupdate_result.stdout | lower"
+  when:
+    - bind_geoipupdate_install
+    - bind_geoipupdate_run_now
+    - bind_geoipupdate_account_id | length > 0
+    - bind_geoipupdate_license_key | length > 0

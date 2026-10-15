@@ -1,0 +1,30 @@
+---
+galaxy_info:
+  role_name: bind_dns
+  author: Justin Maughmer
+  description: >-
+    Installs and configures ISC BIND (named) on RHEL 8+ and clones, for
+    authoritative master/slave zone hosting or dedicated recursive caching
+    resolvers, with DNSSEC (including on RHEL 8 via the bind9.16 AppStream
+    package), DNS64, GeoIP2, per-category logging, zone statistics, and
+    optional chroot confinement.
+  license: MIT
+  min_ansible_version: "2.15"
+  platforms:
+    - name: EL
+      versions:
+        - "8"
+        - "9"
+        - "10"
+  galaxy_tags:
+    - dns
+    - bind
+    - named
+    - dnssec
+    - rhel
+
+dependencies: []
+
+collections:
+  - ansible.posix
+  - community.general

@@ -1,0 +1,23 @@
+---
+# Chrooted, DNSSEC-signing primary — the shape of examples/'s internet-facing
+# master. Signing keys, query logs and dnstap output all get written from
+# inside the chroot, through its bind mounts.
+bind_dns_role: authoritative
+bind_chroot_enabled: true                   # prepare.yml overrides this to false
+bind_chroot_extra_paths: [/srv/named-extra]  # created by prepare.yml
+bind_acls:
+  trusted: [127.0.0.1, "::1"]
+  transfer_hosts: []
+  recursion_clients: []
+  dns64_clients: []
+bind_dnssec_enable_signing: true            # on EL8 this also switches to bind9.16
+bind_dnstap_enabled: true
+bind_zones:
+  - name: chroot.test
+    type: master
+    dnssec: true
+    primary_ns: ns1.chroot.test
+    nameservers: [ns1.chroot.test]
+    records:
+      - { name: ns1, type: A, value: 10.153.54.10 }
+      - { name: www, type: A, value: 10.153.54.20 }

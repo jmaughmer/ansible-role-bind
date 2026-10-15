@@ -1,0 +1,15 @@
+---
+# Secondary that transfers every zone from the primary, including the one
+# the primary loads from zones.d.
+bind_dns_role: authoritative
+bind_acls:
+  trusted: [127.0.0.1, "::1"]
+  transfer_hosts: []
+  recursion_clients: []
+  dns64_clients: []
+bind_transfers_in: 20
+bind_transfers_per_ns: 5
+bind_zones:
+  - { name: example.test, type: slave, masters: ["{{ test_master_ip }}"] }
+  - { name: 53.153.10.in-addr.arpa, type: slave, masters: ["{{ test_master_ip }}"] }
+  - { name: customer.test, type: slave, masters: ["{{ test_master_ip }}"] }

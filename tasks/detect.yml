@@ -1,0 +1,12 @@
+---
+# On RHEL 8, whether bind9.16 is already installed feeds bind_use_bind9_16's
+# default (defaults/main.yml): once a host is on 9.16, turning DNSSEC signing
+# off mustn't silently downgrade it back to 9.11. Runs before assertions.yml,
+# which is the first thing to read bind_use_bind9_16.
+- name: Check whether the bind9.16 package is installed
+  ansible.builtin.command: rpm -q --quiet bind9.16
+  register: bind_bind9_16_rpm
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when: ansible_facts['distribution_major_version'] | int == 8

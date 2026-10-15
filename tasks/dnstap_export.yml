@@ -1,0 +1,66 @@
+---
+# Runs after named is up: the converter's first run calls "rndc dnstap -roll".
+- name: Install the dnstap-to-NDJSON converter
+  ansible.builtin.copy:
+    src: bind-dnstap-to-ndjson.py
+    dest: "{{ bind_dnstap_export_script }}"
+    owner: root
+    group: root
+    mode: "0755"
+  when: bind_dnstap_export_enabled
+
+- name: Template the converter's systemd service and timer
+  ansible.builtin.template:
+    src: "systemd/{{ item }}.j2"
+    dest: "/etc/systemd/system/{{ item }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop:
+    - bind-dnstap-ndjson.service
+    - bind-dnstap-ndjson.timer
+  register: bind_dnstap_units
+  when: bind_dnstap_export_enabled
+
+- name: Enable and start the converter timer
+  ansible.builtin.systemd:
+    name: bind-dnstap-ndjson.timer
+    enabled: true
+    state: started
+    daemon_reload: "{{ bind_dnstap_units is changed }}"
+  when: bind_dnstap_export_enabled
+
+# Turning export off later: tear down what an earlier run installed.
+# Converted NDJSON already in bind_log_dir is left alone.
+- name: Check for a previously installed converter timer
+  ansible.builtin.stat:
+    path: /etc/systemd/system/bind-dnstap-ndjson.timer
+  register: bind_dnstap_timer_file
+  when: not bind_dnstap_export_enabled
+
+- name: Stop and disable the converter timer
+  ansible.builtin.systemd:
+    name: bind-dnstap-ndjson.timer
+    enabled: false
+    state: stopped
+  when:
+    - not bind_dnstap_export_enabled
+    - bind_dnstap_timer_file.stat.exists
+
+- name: Remove the converter and its systemd units
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /etc/systemd/system/bind-dnstap-ndjson.timer
+    - /etc/systemd/system/bind-dnstap-ndjson.service
+    - "{{ bind_dnstap_export_script }}"
+  register: bind_dnstap_removed
+  when: not bind_dnstap_export_enabled
+
+- name: Reload systemd after removing the converter units
+  ansible.builtin.systemd:
+    daemon_reload: true
+  when:
+    - not bind_dnstap_export_enabled
+    - bind_dnstap_removed is changed

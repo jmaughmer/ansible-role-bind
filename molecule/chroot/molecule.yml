@@ -1,0 +1,40 @@
+---
+# One server switched from plain named.service to named-chroot, the way an
+# existing host would be: prepare.yml deploys the role with chroot off,
+# then converge.yml turns it on. verify.yml checks named really runs inside
+# /var/named/chroot, that the role's bind mounts are in place, and that
+# signing, query logging and dnstap all still work through them.
+#   molecule test -s chroot
+# MOLECULE_DISTRO picks the EL release, as in the default scenario.
+#
+# In a rootless container, named-chroot's setup script can't create the
+# chroot's /dev nodes (mknod isn't allowed in a user namespace), so
+# /var/named/chroot/dev stays empty here, unlike on a real host. named
+# runs fine without them.
+role_name_check: 1
+
+dependency:
+  name: galaxy
+  options:
+    requirements-file: ${MOLECULE_SCENARIO_DIRECTORY}/../default/requirements.yml
+
+driver:
+  name: podman
+
+platforms:
+  - name: ns-chroot
+    image: "docker.io/geerlingguy/docker-${MOLECULE_DISTRO:-rockylinux9}-ansible:latest"
+    pre_build_image: true
+    override_command: false   # keep the image's own CMD: systemd as PID 1
+    systemd: always
+    privileged: true          # named-chroot's setup bind-mounts paths into the chroot
+
+provisioner:
+  name: ansible
+  inventory:
+    links:
+      group_vars: ../default/inventory/group_vars/
+      host_vars: inventory/host_vars/
+
+verifier:
+  name: ansible

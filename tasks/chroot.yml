@@ -1,0 +1,75 @@
+---
+# Runs either direction so toggling bind_chroot_enabled on an existing host
+# cleanly switches services instead of leaving both installed/enabled.
+- name: Gather service facts
+  ansible.builtin.service_facts:
+
+- name: Install BIND chroot package
+  ansible.builtin.dnf:
+    name: "{{ 'bind9.16-chroot' if bind_use_bind9_16 else 'bind-chroot' }}"
+    state: present
+    allowerasing: "{{ ansible_facts['distribution_major_version'] | int == 8 }}"   # see install.yml
+  when: bind_chroot_enabled
+
+- name: Bind-mount extra paths into the chroot
+  # /etc/named-chroot.files is owned by the bind-chroot package; its shipped
+  # defaults already cover /etc/named and /var/named wholesale (see the
+  # comment in defaults/main.yml), so only paths outside those two trees are
+  # appended here. lineinfile's default behavior (no regexp) only adds a
+  # line if that exact text isn't already present anywhere in the file, so
+  # this is a no-op if the path was already covered by RHEL's own defaults.
+  ansible.builtin.lineinfile:
+    path: /etc/named-chroot.files
+    line: "{{ item }}"
+    insertafter: EOF
+  loop: "{{ bind_chroot_paths }}"
+  loop_control:
+    label: "{{ item }}"
+  when: bind_chroot_enabled
+  notify: restart named
+  # A full restart (not reload) is required for new entries to take effect —
+  # the bind mounts are (re)established by named-chroot's ExecStartPre, which
+  # a SIGHUP-based reload never re-runs.
+
+# setup-named-chroot.sh only bind-mounts a listed directory onto a directory
+# that already exists inside the chroot, and never creates it — without one,
+# the mount fails and named-chroot dies on its first log file. (For a listed
+# file it creates the target itself, but only if the parent directory exists.)
+- name: Check whether each extra chroot path is a file or a directory
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop: "{{ bind_chroot_paths }}"
+  register: bind_chroot_path_stat
+  when: bind_chroot_enabled
+
+- name: Create the mount points inside the chroot
+  # No owner/mode on purpose: once named-chroot is running, a mount point IS
+  # the bind-mounted host directory, so setting attributes here would change
+  # the real directory (e.g. take bind_log_dir away from named). This only
+  # creates what's missing; the mounted directory's own attributes apply.
+  ansible.builtin.file:  # noqa: risky-file-permissions
+    path: "{{ bind_chroot_dir }}{{ item.item if item.stat.isdir else (item.item | dirname) }}"
+    state: directory
+  loop: "{{ bind_chroot_path_stat.results | default([]) | selectattr('stat', 'defined') | selectattr('stat.exists') | list }}"
+  loop_control:
+    label: "{{ item.item }}"
+  when: bind_chroot_enabled
+  notify: restart named
+
+- name: Stop and disable named.service when running chrooted
+  ansible.builtin.systemd:
+    name: named.service
+    state: stopped
+    enabled: false
+  when:
+    - bind_chroot_enabled
+    - "'named.service' in ansible_facts.services"
+
+- name: Stop and disable named-chroot.service when not running chrooted
+  ansible.builtin.systemd:
+    name: named-chroot.service
+    state: stopped
+    enabled: false
+  when:
+    - not bind_chroot_enabled
+    - "'named-chroot.service' in ansible_facts.services"

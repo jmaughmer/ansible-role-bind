@@ -1,0 +1,14 @@
+---
+# One file, one zone — a bare dict, not wrapped in a list. This is the
+# shape scripts/zone_to_bind_vars.py --split-output writes.
+name: customer-a.example
+type: master
+allow_transfer_acl: transfer_hosts
+primary_ns: ns1.example.com
+admin_email: hostmaster.example.com
+nameservers:
+  - ns1.example.com
+  - ns2.example.com
+records:
+  - { name: www, type: A, value: 10.0.4.10 }
+  - { name: mail, type: A, value: 10.0.4.11 }

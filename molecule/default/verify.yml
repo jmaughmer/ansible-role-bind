@@ -1,0 +1,192 @@
+---
+# Checks real DNS behavior with dig (installed on every instance by the role
+# itself, via bind-utils / bind9.16-utils) rather than just inspecting
+# files. Lookups that depend on background work — signing, zone transfers —
+# retry for a while before failing.
+
+# The checks reach other instances by address (test_*_ip).
+- name: Gather facts from every instance
+  hosts: all
+  gather_facts: true
+  tasks: []
+
+- name: Verify each host runs the expected BIND flavor
+  hosts: all
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Read the running BIND version
+      ansible.builtin.command: named -v
+      register: named_version
+      changed_when: false
+
+    - name: Check RHEL 8 hosts got bind9.16 exactly where the role needs it
+      # Signing (ns-master) and dnstap (resolver) need 9.16; the secondary
+      # needs neither, so it stays on RHEL 8's base 9.11 package.
+      vars:
+        expected: "{{ '9.11' if inventory_hostname == 'ns-slave' else '9.16' }}"
+      ansible.builtin.assert:
+        that:
+          - named_version.stdout is search('^BIND ' ~ (expected | regex_escape) ~ '\.')
+        fail_msg: "Expected BIND {{ expected }} on {{ inventory_hostname }}, got: {{ named_version.stdout }}"
+      when: ansible_facts['distribution_major_version'] | int == 8
+
+- name: Verify the primary
+  hosts: ns-master
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Check named is running
+      ansible.builtin.command: systemctl is-active named
+      register: named_active
+      changed_when: false
+      failed_when: named_active.stdout != 'active'
+
+    - name: Check the rendered configuration is valid
+      ansible.builtin.command: named-checkconf /etc/named.conf
+      changed_when: false
+
+    - name: Look up records from the role-managed zones
+      ansible.builtin.command: "dig +short @127.0.0.1 {{ item.name }} {{ item.type }}"
+      register: record_lookup
+      changed_when: false
+      failed_when: record_lookup.stdout != item.expect
+      loop:
+        - { name: www.example.test, type: A, expect: 10.153.53.20 }
+        - { name: example.test, type: MX, expect: "10 mail.example.test." }
+        - { name: 20.53.153.10.in-addr.arpa, type: PTR, expect: "www.example.test." }
+        - { name: www.customer.test, type: A, expect: 10.153.53.30 }   # loaded from zones.d
+      loop_control:
+        label: "{{ item.name }} {{ item.type }}"
+
+    - name: Wait for example.test to be signed
+      ansible.builtin.command: dig +dnssec +norec @127.0.0.1 example.test SOA
+      register: signed_soa
+      changed_when: false
+      until: "'RRSIG' in signed_soa.stdout"
+      retries: 30
+      delay: 2
+
+    - name: Check queries are being logged
+      ansible.builtin.command: "grep -c 'query: www.example.test' /var/log/named/queries.log"
+      changed_when: false
+
+    - name: Check the statistics channel answers
+      ansible.builtin.uri:
+        url: http://127.0.0.1:8053/
+        status_code: 200
+
+    - name: Read the DS record the role wrote on the control node
+      ansible.builtin.slurp:
+        src: "{{ lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}/dnssec-ds-records/example.test.ds"
+      register: ds_file
+      delegate_to: localhost
+      become: false
+
+    - name: Check the DS record is for example.test
+      ansible.builtin.assert:
+        that:
+          - (ds_file.content | b64decode) is search('^example\.test\.\s+IN\s+DS\s', multiline=True)
+        fail_msg: "Unexpected DS file content: {{ ds_file.content | b64decode }}"
+
+- name: Verify the secondary
+  hosts: ns-slave
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Check named is running
+      ansible.builtin.command: systemctl is-active named
+      register: named_active
+      changed_when: false
+      failed_when: named_active.stdout != 'active'
+
+    - name: Wait for each zone to arrive by zone transfer
+      ansible.builtin.command: "dig +short @127.0.0.1 {{ item.name }} {{ item.type }}"
+      register: record_lookup
+      changed_when: false
+      until: record_lookup.stdout == item.expect
+      retries: 30
+      delay: 2
+      loop:
+        - { name: www.example.test, type: A, expect: 10.153.53.20 }
+        - { name: 20.53.153.10.in-addr.arpa, type: PTR, expect: "www.example.test." }
+        - { name: www.customer.test, type: A, expect: 10.153.53.30 }
+      loop_control:
+        label: "{{ item.name }} {{ item.type }}"
+
+    - name: Check the transferred example.test is still signed
+      ansible.builtin.command: dig +dnssec +norec @127.0.0.1 www.example.test A
+      register: signed_answer
+      changed_when: false
+      failed_when: "'RRSIG' not in signed_answer.stdout"
+
+    - name: Check transferred zones were saved to disk
+      ansible.builtin.stat:
+        path: "/var/named/zones/slaves/{{ item }}.zone"
+      register: slave_file
+      until: slave_file.stat.exists
+      retries: 15
+      delay: 2
+      loop: [example.test, 53.153.10.in-addr.arpa, customer.test]
+
+    - name: Check the resolver refuses recursion to a client outside its ACL
+      ansible.builtin.command: "dig +tries=1 +time=3 @{{ test_resolver_ip }} www.example.test A"
+      register: refused
+      changed_when: false
+      failed_when: "'status: REFUSED' not in refused.stdout"
+
+- name: Verify the resolver
+  hosts: resolver
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Check named is running
+      ansible.builtin.command: systemctl is-active named
+      register: named_active
+      changed_when: false
+      failed_when: named_active.stdout != 'active'
+
+    - name: Resolve a name through the forward zone
+      ansible.builtin.command: dig +short @127.0.0.1 www.example.test A
+      register: forwarded
+      changed_when: false
+      until: forwarded.stdout == '10.153.53.20'
+      retries: 10
+      delay: 2
+
+    - name: Check DNS64 synthesizes an AAAA record from the A record
+      ansible.builtin.command: dig +short @127.0.0.1 www.example.test AAAA
+      register: synthesized
+      changed_when: false
+      failed_when: synthesized.stdout != '64:ff9b::a99:3514'   # 10.153.53.20 inside 64:ff9b::/96
+
+    - name: Check the dnstap export timer is enabled
+      ansible.builtin.command: systemctl is-enabled bind-dnstap-ndjson.timer
+      register: timer_enabled
+      changed_when: false
+      failed_when: timer_enabled.stdout != 'enabled'
+
+    - name: Run the dnstap converter now rather than waiting for its timer
+      ansible.builtin.systemd:
+        name: bind-dnstap-ndjson.service
+        state: started
+      changed_when: false
+
+    - name: Read the exported dnstap events
+      ansible.builtin.slurp:
+        src: /var/log/named/dnstap.ndjson
+      register: dnstap_ndjson
+
+    - name: Check the export includes the answer to www.example.test
+      vars:
+        dnstap_answers: >-
+          {{ (dnstap_ndjson.content | b64decode).splitlines() | map('from_json')
+             | selectattr('dns.question.name', 'defined')
+             | selectattr('dns.question.name', 'equalto', 'www.example.test')
+             | selectattr('dns.answers', 'defined')
+             | map(attribute='dns.answers') | flatten
+             | map(attribute='data') | list }}
+      ansible.builtin.assert:
+        that:
+          - "'10.153.53.20' in dnstap_answers"
+        fail_msg: "No exported answer for www.example.test A; answers seen: {{ dnstap_answers }}"

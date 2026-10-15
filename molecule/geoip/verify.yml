@@ -1,0 +1,35 @@
+---
+- name: Verify GeoIP2 ACL matching
+  hosts: all
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Check named is running
+      ansible.builtin.command: systemctl is-active named
+      register: named_active
+      changed_when: false
+      failed_when: named_active.stdout != 'active'
+
+    - name: Check geoip-directory points at the database
+      ansible.builtin.command: grep -q 'geoip-directory "/usr/share/GeoIP";' /etc/named/conf.d/options.conf
+      changed_when: false
+
+    - name: Allow a zone transfer to a client in GB
+      ansible.builtin.command: dig -b 81.2.69.150 +tries=1 +time=5 @127.0.0.1 geo.test AXFR
+      register: axfr_gb
+      changed_when: false
+      failed_when: >-
+        'Transfer failed' in axfr_gb.stdout
+        or (axfr_gb.stdout | regex_findall('(?m)^geo\.test\.\s+\d+\s+IN\s+SOA\s') | length) != 2
+
+    - name: Refuse a zone transfer to a client in SE
+      ansible.builtin.command: dig -b 89.160.20.115 +tries=1 +time=5 @127.0.0.1 geo.test AXFR
+      register: axfr_se
+      changed_when: false
+      failed_when: "'Transfer failed' not in axfr_se.stdout"
+
+    - name: Refuse a zone transfer to a client with no country (loopback)
+      ansible.builtin.command: dig +tries=1 +time=5 @127.0.0.1 geo.test AXFR
+      register: axfr_local
+      changed_when: false
+      failed_when: "'Transfer failed' not in axfr_local.stdout"

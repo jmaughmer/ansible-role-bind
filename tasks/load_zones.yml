@@ -1,0 +1,40 @@
+---
+- name: Fail if bind_zones_vars_dir is set but no zone files were found there
+  ansible.builtin.assert:
+    that:
+      - query('fileglob', bind_zones_vars_dir + '/*.yml', bind_zones_vars_dir + '/*.yaml') | length > 0
+    fail_msg: >-
+      bind_zones_vars_dir is set to '{{ bind_zones_vars_dir }}' but no .yml/.yaml files were found
+      there. Double check the path — use an absolute path or one built from the playbook_dir magic
+      variable, since a bare relative path's resolution here isn't worth relying on — or unset
+      bind_zones_vars_dir if bind_zones is meant to be the only source on this host.
+  when: bind_zones_vars_dir | length > 0
+
+- name: Fail if a bind_zones_vars_dir file isn't a zone dict or a list of them
+  # is mapping, not is sequence, decides the dict-vs-list branch below —
+  # Jinja's "sequence" test is true for dicts AND strings too (both support
+  # len()/__getitem__), so it can't tell a bare zone dict apart from a list
+  # on its own; only "mapping" is dict-specific. is not string additionally
+  # rejects a file that's just a scalar (e.g. accidentally empty or
+  # malformed YAML) with a clear message here, instead of a confusing
+  # "can only concatenate list (not X) to list" from the load step below.
+  vars:
+    loaded_zone_content: "{{ lookup('file', item) | from_yaml }}"
+  ansible.builtin.assert:
+    that:
+      - (loaded_zone_content is mapping) or (loaded_zone_content is sequence and loaded_zone_content is not string)
+    fail_msg: "{{ item }} doesn't contain a zone dict or a list of zone dicts — check its YAML content."
+  loop: "{{ query('fileglob', bind_zones_vars_dir + '/*.yml', bind_zones_vars_dir + '/*.yaml') }}"
+  loop_control:
+    label: "{{ item | basename }}"
+  when: bind_zones_vars_dir | length > 0
+
+- name: Load per-zone/per-group zone definitions from bind_zones_vars_dir
+  vars:
+    loaded_zone_content: "{{ lookup('file', item) | from_yaml }}"
+  ansible.builtin.set_fact:
+    bind_zones: "{{ bind_zones | default([]) + ([loaded_zone_content] if loaded_zone_content is mapping else loaded_zone_content) }}"
+  loop: "{{ query('fileglob', bind_zones_vars_dir + '/*.yml', bind_zones_vars_dir + '/*.yaml') }}"
+  loop_control:
+    label: "{{ item | basename }}"
+  when: bind_zones_vars_dir | length > 0

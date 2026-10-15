@@ -1,0 +1,21 @@
+// {{ ansible_managed }}
+// All categories routed into a single file — layout matches
+// bind-elasticsearch-pipeline/named.conf.logging.conf (apart from how many
+// rolled files are kept), for drop-in use with that ingest pipeline
+// (Fleet "Paths": {{ bind_log_dir }}/{{ bind_log_consolidated_file }}).
+logging {
+    channel elastic_log {
+        file "{{ bind_log_dir }}/{{ bind_log_consolidated_file }}" versions {{ bind_log_file_versions }} size {{ bind_log_file_size }};
+        print-time {{ (('yes' if bind_log_print_time else 'no') if bind_log_print_time is boolean else bind_log_print_time) }};
+        print-severity yes;
+        print-category yes;
+        severity {{ bind_log_severity }};
+{% if bind_log_buffered %}
+        buffered yes;
+{% endif %}
+    };
+
+{% for category in bind_log_categories %}
+    category {{ category }} { elastic_log; };
+{% endfor %}
+};

@@ -1,0 +1,18 @@
+; {{ ansible_managed }}
+; Zone: {{ zone.name }}
+$TTL {{ zone.ttl | default(86400) }}
+@   IN  SOA {{ zone.primary_ns }}. {{ zone.admin_email | default('hostmaster.' + zone.name) }}. (
+        {{ bind_zone_serial }} ; serial
+        {{ zone.refresh | default(3600) }}       ; refresh (seconds)
+        {{ zone.retry | default(900) }}        ; retry (seconds)
+        {{ zone.expire | default(1209600) }}      ; expire (seconds)
+        {{ zone.negative_ttl | default(3600) }} )    ; negative cache TTL (seconds)
+
+{% for ns in zone.nameservers %}
+    IN  NS  {{ ns }}.
+{% endfor %}
+{# The comment is an expression, not an {% if %} block: a block tag at the end
+   of the line would have trim_blocks eat the newline and run records together. #}
+{% for rec in zone.records %}
+{{ rec.name }}    IN  {{ rec.type }}   {{ rec.value }}{{ ('  ; ' ~ rec.comment) if rec.comment is defined else '' }}
+{% endfor %}

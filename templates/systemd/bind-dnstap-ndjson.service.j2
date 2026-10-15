@@ -1,0 +1,25 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Convert BIND dnstap captures to NDJSON for Elastic Agent
+After={{ bind_service_name }}.service
+
+[Service]
+Type=oneshot
+# named's group can read /etc/rndc.key, and named owns {{ bind_log_dir }}.
+User={{ bind_user }}
+Group={{ bind_group }}
+ExecStart={{ bind_dnstap_export_python }} {{ bind_dnstap_export_script }} \
+    --dnstap-file {{ bind_log_dir }}/{{ bind_dnstap_file }} \
+    --roll {{ bind_dnstap_file_versions }} \
+    --output {{ bind_log_dir }}/{{ bind_dnstap_ndjson_file }} \
+    --max-size {{ bind_dnstap_ndjson_size }} \
+    --backups {{ bind_dnstap_ndjson_versions }} \
+    --state-file /var/lib/bind-dnstap-ndjson/state.json
+StateDirectory=bind-dnstap-ndjson
+UMask=0027
+Nice=10
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ReadWritePaths={{ bind_log_dir }}

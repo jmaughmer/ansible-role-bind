@@ -1,0 +1,10 @@
+---
+# The role is included by the repository's path (see the default scenario's
+# converge.yml).
+- name: Converge
+  hosts: all
+  become: true
+  tasks:
+    - name: Apply the role with dnstap capture and export on
+      ansible.builtin.include_role:
+        name: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}"

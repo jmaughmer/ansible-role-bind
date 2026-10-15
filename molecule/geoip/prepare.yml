@@ -1,0 +1,39 @@
+---
+- name: Install Python 3.11 on EL8 hosts
+  ansible.builtin.import_playbook: ../default/prepare.yml
+
+- name: Supply a GeoIP2 database and test client addresses
+  hosts: all
+  become: true
+  vars:
+    # MaxMind's public test database, pinned to a commit and checksum. Its
+    # networks are fixed test data: 81.2.69.144/28 is GB, 89.160.20.112/28
+    # is SE. Installed under the name BIND looks for a real one by.
+    geoip_test_db_url: "https://raw.githubusercontent.com/maxmind/MaxMind-DB/4577dbf87817df6b6d0d4205a3417c1331fa24f6/test-data/GeoLite2-Country-Test.mmdb"
+    geoip_test_db_sha256: 6996ce679243c7f719b901ebe3b490048af2fb5965163f083857533841154fd8
+  tasks:
+    - name: Create the GeoIP database directory
+      ansible.builtin.file:
+        path: /usr/share/GeoIP
+        state: directory
+        mode: "0755"
+
+    - name: Download MaxMind's GeoLite2-Country test database
+      ansible.builtin.get_url:
+        url: "{{ geoip_test_db_url }}"
+        dest: /usr/share/GeoIP/GeoLite2-Country.mmdb
+        checksum: "sha256:{{ geoip_test_db_sha256 }}"
+        mode: "0644"
+
+    - name: Install iproute for the ip command
+      ansible.builtin.dnf:
+        name: iproute
+        state: present
+
+    # Local addresses, so dig -b can send queries from them to 127.0.0.1.
+    - name: Add a GB and an SE test address to the loopback interface
+      ansible.builtin.command: "ip addr add {{ item }}/32 dev lo"
+      register: add_addr
+      changed_when: add_addr.rc == 0
+      failed_when: add_addr.rc != 0 and 'File exists' not in add_addr.stderr
+      loop: [81.2.69.150, 89.160.20.115]

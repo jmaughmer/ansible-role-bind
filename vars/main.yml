@@ -1,0 +1,18 @@
+---
+# dnssec-policy / inline-signing (BIND 9.16+) is available from the base
+# 'bind' package on RHEL 9+, or from RHEL 8's separate 'bind9.16' AppStream
+# package (bind_use_bind9_16 in defaults/main.yml, which defaults to on
+# automatically whenever bind_dnssec_enable_signing is set on RHEL 8).
+# Used by tasks/assertions.yml to fail fast if neither is true.
+bind_dnssec_policy_supported: "{{ bind_use_bind9_16 or (ansible_facts['distribution_major_version'] | int >= 9) }}"
+
+# dnstap-output's size/versions/suffix rotation options arrived in BIND
+# 9.12 — so the same split as above: 9.16+ yes, RHEL 8's base 9.11 no.
+bind_dnstap_rotation_supported: "{{ bind_dnssec_policy_supported }}"
+
+# named-chroot's root, fixed by the bind-chroot/bind9.16-chroot unit file.
+bind_chroot_dir: /var/named/chroot
+# Host paths the role adds to /etc/named-chroot.files (RHEL's own list
+# already covers /etc/named and /var/named) — see tasks/chroot.yml.
+bind_chroot_paths: >-
+  {{ ([bind_log_dir] + ([bind_geoip_directory] if bind_geoip_enabled else []) + bind_chroot_extra_paths) | unique | list }}

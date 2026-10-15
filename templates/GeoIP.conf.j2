@@ -1,0 +1,6 @@
+# {{ ansible_managed }}
+# geoipupdate configuration — https://dev.maxmind.com/geoip/updating-databases
+AccountID {{ bind_geoipupdate_account_id }}
+LicenseKey {{ bind_geoipupdate_license_key }}
+EditionIDs {{ bind_geoipupdate_edition_ids | join(' ') }}
+DatabaseDirectory {{ bind_geoip_directory }}

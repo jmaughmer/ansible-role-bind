@@ -1,0 +1,41 @@
+---
+# DNSSEC-signing primary with role-managed zones. The A/PTR record values
+# below are just zone data — they don't need to match container addresses.
+bind_dns_role: authoritative
+bind_acls:
+  trusted: [127.0.0.1, "::1"]
+  transfer_hosts: ["{{ test_slave_ip }}"]
+  recursion_clients: []
+  dns64_clients: []
+bind_dnssec_enable_signing: true   # on EL8 this also switches to bind9.16
+bind_dnssec_policy: molecule
+bind_dnssec_policies:
+  molecule:
+    keys:
+      - { role: ksk, lifetime: unlimited, algorithm: ecdsap256sha256 }
+      - { role: zsk, lifetime: unlimited, algorithm: ecdsap256sha256 }
+bind_rate_limit:
+  responses-per-second: 50
+  window: 5
+  exempt-clients: [trusted]
+bind_zones_vars_dir: "{{ playbook_dir }}/zones.d"
+bind_zones:
+  - name: example.test
+    type: master
+    also_notify: ["{{ test_slave_ip }}"]
+    dnssec: true
+    primary_ns: ns1.example.test
+    nameservers: [ns1.example.test, ns2.example.test]
+    records:
+      - { name: ns1, type: A, value: 10.153.53.10 }
+      - { name: ns2, type: A, value: 10.153.53.11 }
+      - { name: www, type: A, value: 10.153.53.20, comment: "web server" }
+      - { name: mail, type: A, value: 10.153.53.25 }
+      - { name: "@", type: MX, value: "10 mail.example.test." }
+  - name: 53.153.10.in-addr.arpa
+    type: master
+    also_notify: ["{{ test_slave_ip }}"]
+    primary_ns: ns1.example.test
+    nameservers: [ns1.example.test, ns2.example.test]
+    records:
+      - { name: "20", type: PTR, value: "www.example.test." }

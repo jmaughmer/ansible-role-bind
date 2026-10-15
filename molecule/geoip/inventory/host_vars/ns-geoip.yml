@@ -1,0 +1,21 @@
+---
+# geo.test can only be transferred by clients the GeoIP2 database places in
+# GB. The test addresses come from MaxMind's GeoLite2-Country test data
+# (see prepare.yml): 81.2.69.150 is GB, 89.160.20.115 is SE.
+bind_dns_role: authoritative
+bind_geoip_enabled: true          # bind_geoipupdate_install stays off: prepare.yml supplies the database
+bind_acls:
+  trusted: [127.0.0.1, "::1"]
+  transfer_hosts: []
+  recursion_clients: []
+  dns64_clients: []
+  gb_only: ["geoip country GB"]
+bind_zones:
+  - name: geo.test
+    type: master
+    allow_transfer_acl: gb_only
+    primary_ns: ns1.geo.test
+    nameservers: [ns1.geo.test]
+    records:
+      - { name: ns1, type: A, value: 10.153.55.10 }
+      - { name: www, type: A, value: 10.153.55.20 }
