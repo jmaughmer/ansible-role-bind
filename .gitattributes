@@ -1,0 +1,3 @@
+# Keep LF in the working copy: these files run on Linux (molecule via WSL,
+# the converter and scripts on the managed hosts).
+* text=auto eol=lf
