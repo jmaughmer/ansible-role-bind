@@ -489,8 +489,8 @@ Two things worth knowing that are about DNS itself, not this role:
 `bind_log_consolidated: false` (default) gives one file per category —
 `{{ bind_log_dir }}/queries.log`, `xfer-in.log`, `security.log`, etc.
 
-There's already an ingest pipeline for BIND logs in this workspace at
-[`../bind-elasticsearch-pipeline`](../bind-elasticsearch-pipeline/), built
+There's already an ingest pipeline for BIND logs in the companion
+repository [`elastic-bind`](https://github.com/jmaughmer/elastic-bind), built
 against a **single** consolidated log file with the same 17 categories this
 role defaults `bind_log_categories` to. The two are compatible either way:
 
@@ -601,7 +601,7 @@ Agent decodes it with its `ndjson` parser — see
 [`examples/elastic-agent-dnstap.yml`](examples/elastic-agent-dnstap.yml)
 (dataset `bind.dnstap`, path `/var/log/named/dnstap.ndjson*`). That config
 also routes events through `bind-dnstap-pipeline` from
-[`../bind-elasticsearch-pipeline`](../bind-elasticsearch-pipeline/), which
+[`elastic-bind`](https://github.com/jmaughmer/elastic-bind), which
 adds registered domain/subdomain/TLD, `event.outcome`, `event.action` and
 `related.ip`, alongside a component template with the field mappings; load
 both with that repo's `setup.sh` first. That repo also has Kibana

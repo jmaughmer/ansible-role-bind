@@ -2,7 +2,7 @@
 # for hosts with bind_dnstap_enabled and bind_dnstap_export_enabled set.
 #
 # This is a second Custom Logs integration, alongside the text-log one from
-# bind-elasticsearch-pipeline. In Kibana: Fleet -> Agent policies -> <your
+# elastic-bind. In Kibana: Fleet -> Agent policies -> <your
 # policy> -> Add integration -> Custom Logs:
 #   - Dataset name:  bind.dnstap
 #   - Paths:         /var/log/named/dnstap.ndjson*
@@ -14,13 +14,13 @@
 # bind-dnstap-to-ndjson already writes ECS field names (dns.question.*,
 # dns.answers[], dns.response_code, client.ip, ...) and an absolute UTC
 # @timestamp, so unlike the text logs there's no event.timezone to set.
-# bind-elasticsearch-pipeline's bind-dnstap-pipeline adds registered
+# elastic-bind's bind-dnstap-pipeline adds registered
 # domain/subdomain/TLD, event.outcome, event.action and related.ip on top,
 # and its logs-bind.dnstap@custom template maps the fields (ip, long, ...)
 # — load both with that repo's setup.sh first. Without them, drop the
 # pipeline line: the events still index, just without those extras and
 # with Elasticsearch's default mappings.
-# (bind-elasticsearch-pipeline/elastic-agent-dnstap.yml is the same config.)
+# (elastic-bind/elastic-agent-dnstap.yml is the same config.)
 
 pipeline: bind-dnstap-pipeline
 parsers:

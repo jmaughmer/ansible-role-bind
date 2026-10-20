@@ -221,12 +221,12 @@ bind_geoipupdate_run_now: false          # actually invoke geoipupdate during th
 # false (default) = one file per category under bind_log_dir, e.g.
 #   /var/log/named/queries.log, /var/log/named/xfer-in.log, ...
 # true  = every category routed into a single bind_log_consolidated_file,
-#   in the exact layout bind-elasticsearch-pipeline/named.conf.logging.conf
+#   in the exact layout elastic-bind/named.conf.logging.conf
 #   uses, for drop-in compatibility with that ingest pipeline.
 bind_log_consolidated: false
 bind_log_consolidated_file: named.log
 
-# Matches the 17 categories bind-elasticsearch-pipeline's grok/simulate data
+# Matches the 17 categories elastic-bind's grok/simulate data
 # covers. Add/remove categories here; both logging layouts iterate this list.
 bind_log_categories:
   - default
