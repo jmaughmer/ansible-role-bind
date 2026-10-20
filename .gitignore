@@ -6,6 +6,8 @@ examples/collections/
 .ansible/
 .vault_pass*
 vault-password*
+# Exception: the chroot scenario's test-only vault password script
+!molecule/chroot/vault-password.sh
 
 __pycache__/
 *.pyc
