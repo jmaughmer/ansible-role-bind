@@ -6,7 +6,8 @@ of hosts:
 
 - **Authoritative** master or slave zone servers — recursion off, they only
   answer for zones they host.
-- **Dedicated recursive caching resolvers** — no local zones, recursion on.
+- **Dedicated recursive caching resolvers** — no zones of their own
+  (forward zones for conditional forwarding aside), recursion on.
 
 One role, one variable (`bind_dns_role`) picks which shape a given host is;
 everything else (DNSSEC, ACLs, DNS64, logging, statistics, GeoIP,
@@ -58,16 +59,30 @@ forwarders) applies to both and is controlled independently.
 | Performance tuning | `bind_minimal_responses`, `bind_ixfr_from_differences`, `bind_querylog`, `bind_recursive_clients`, `bind_transfers_*`, `bind_rate_limit`, … |
 | GeoIP (GeoIP2/MaxMind) | `bind_geoip_enabled`, `bind_geoip_directory`, `bind_geoipupdate_*` |
 | Forwarders | `bind_forwarders`, `bind_forward_policy` |
+| Conditional forwarding | `bind_zones` with `type: forward`, `bind_dnssec_validate_except` |
 | Chroot install | `bind_chroot_enabled`, `bind_chroot_extra_paths` |
+| rndc key (generated, or your own from Vault) | `bind_rndc_key_secret`, `bind_rndc_key_name`, `bind_rndc_key_algorithm` |
 | RHEL 8 BIND 9.16 (DNSSEC) | `bind_use_bind9_16` |
 | Reverse zones (master/slave) | `bind_zones` — same `type: master`/`slave` shape as forward zones |
 | Managing many zones | `bind_zones_vars_dir` (one small file per zone, instead of one big list) |
 
 Full variable list with defaults and comments: [`defaults/main.yml`](defaults/main.yml).
 
-## The three deployment scenarios
+## Deployment scenarios
 
-Complete example inventory + host_vars: [`examples/`](examples/).
+[`examples/`](examples/) has a complete inventory, playbook and
+host_vars for six servers:
+
+| Host | What it shows |
+|---|---|
+| [`dns-master-01`](examples/host_vars/dns-master-01.example.internal.yml) | Master: DNSSEC signing with a custom key policy, role-managed forward and reverse zones, chroot, zones from per-zone files |
+| [`dns-slave-01`](examples/host_vars/dns-slave-01.example.internal.yml) | Slave of dns-master-01 |
+| [`dns-edge-01`](examples/host_vars/dns-edge-01.example.internal.yml) | Internet-facing slave: response rate limiting, chroot, zone-transfer tuning, query log off |
+| [`dns-cache-01`](examples/host_vars/dns-cache-01.example.internal.yml) | Caching-only resolver: no zones and no forwarders, full recursion from the root servers with DNSSEC validation |
+| [`dns-recursive-01`](examples/host_vars/dns-recursive-01.example.internal.yml) | Resolver with upstream forwarders, DNS64 and a GeoIP-scoped client ACL |
+| [`dns-resolver-02`](examples/host_vars/dns-resolver-02.example.internal.yml) | Resolver forwarding an Active Directory domain and its reverse zone to the domain controllers, with dnstap capture and the Elasticsearch export |
+
+The snippets below are the minimum for each kind of host.
 
 ### Master
 
@@ -93,18 +108,53 @@ bind_zones:
     masters: [10.0.1.10]
 ```
 
-### Dedicated recursive caching resolver
+### Caching-only resolver
 
 ```yaml
 bind_dns_role: recursive        # flips bind_recursion_enabled to true by default
 bind_acls:
+  recursion_clients: [127.0.0.1, "::1", 10.0.0.0/8]
+bind_zones: []                  # no local zones
+```
+
+With no forwarders, named resolves everything itself from the root
+servers, so the host needs outbound UDP and TCP port 53 to the internet.
+DNSSEC validation is on by default (`bind_dnssec_validation: auto`).
+
+### Resolver with forwarders and DNS64
+
+```yaml
+bind_dns_role: recursive
+bind_acls:
   recursion_clients: [10.0.0.0/8]
   dns64_clients: [10.0.0.0/8]
 bind_forwarders: [8.8.8.8, 1.1.1.1]
-bind_forward_policy: first
+bind_forward_policy: first      # fall back to full recursion if they don't answer
 bind_dns64_enabled: true
-bind_zones: []                  # no local zones
+bind_zones: []
 ```
+
+### Conditional forwarding
+
+A `type: forward` zone sends queries for one domain to specific servers,
+e.g. an Active Directory domain to its domain controllers, while
+everything else is resolved normally:
+
+```yaml
+bind_dns_role: recursive
+bind_zones:
+  - name: corp.internal
+    type: forward
+    forward_policy: only
+    forwarders: [10.20.1.10, 10.20.1.11]
+bind_dnssec_validate_except: [corp.internal]
+```
+
+A private domain like this is unsigned, and the public DNSSEC chain proves
+it doesn't exist. Without `bind_dnssec_validate_except`, named would
+reject every forwarded answer for it and return SERVFAIL.
+`validate-except` needs BIND 9.13.3+: RHEL 9+, or RHEL 8 with
+`bind_use_bind9_16: true`.
 
 The role refuses to render an `allow-recursion` or `allow-query-cache` ACL
 that lets any client in — `any`, `0.0.0.0/0` or `::/0`, whether named
@@ -678,6 +728,40 @@ bind_rate_limit:
   exempt-clients: [trusted]   # list values render as an address match list
 ```
 
+## rndc key
+
+`rndc`, and the role itself (DNSSEC key status, the dnstap export),
+control `named` with the key in `/etc/rndc.key`. By default the role
+generates a random key on each host the first time, as RHEL itself would,
+and never changes it afterwards.
+
+To use a key you already have, supply its secret from Ansible Vault. You
+might want this to keep a host's existing key across a rebuild, or to
+manage every server's key centrally instead of leaving each one random:
+
+```yaml
+# group_vars/bind_dns/vault.yml, encrypted with ansible-vault
+vault_bind_rndc_key_secret: "<base64 secret>"
+```
+
+```yaml
+# group_vars/bind_dns/main.yml
+bind_rndc_key_secret: "{{ vault_bind_rndc_key_secret }}"
+bind_rndc_key_name: rndc-key          # the default; must match the other end
+bind_rndc_key_algorithm: hmac-sha256  # the default
+```
+
+Generate a new secret with `rndc-confgen -A hmac-sha256 | grep secret`, or
+take it from an existing host's `/etc/rndc.key`. With a secret set, the
+role writes `/etc/rndc.key` (root:named, 0640) on every run and restarts
+`named` when it changes. The task runs with `no_log`, so the secret
+appears in neither output nor `--diff`. The `controls` block in
+`named.conf` only accepts commands from 127.0.0.1. Remote `rndc` would need
+a `controls` entry for the management host, which this role doesn't add.
+
+To go back to a generated key, empty `bind_rndc_key_secret` and delete
+`/etc/rndc.key`; the next run generates a new one.
+
 ## SELinux / firewalld
 
 `bind_manage_selinux` / `bind_manage_firewalld` (both default `true`) apply:
@@ -739,7 +823,10 @@ role with chroot off, then converge turns it on. `verify.yml` checks that
 `/var/named/chroot` as its root, that the log directory and
 `bind_chroot_extra_paths` are bind-mounted in and listed once each in
 `/etc/named-chroot.files`, and that DNSSEC signing, query logging and
-dnstap all work from inside the chroot. In a rootless container,
+dnstap all work from inside the chroot. The same switch replaces the
+generated rndc key with a supplied, vault-encrypted one (decrypted with
+the test-only `vault-password.sh`), and `verify.yml` checks `rndc` still
+controls the chrooted `named` with it. In a rootless container,
 `named-chroot`'s setup can't create the chroot's `/dev` device nodes, so
 that one detail differs from a real host; `named` runs fine without them.
 

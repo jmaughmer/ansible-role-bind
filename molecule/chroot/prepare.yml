@@ -19,3 +19,4 @@
         name: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}"
       vars:
         bind_chroot_enabled: false
+        bind_rndc_key_secret: ""   # start with a generated key; converge supplies one

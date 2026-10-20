@@ -1,0 +1,51 @@
+---
+# Internet-facing secondary: pulls dns-master-01's zones, like
+# dns-slave-01, but is tuned to answer the internet. It runs chrooted,
+# rate-limits responses so it can't be used to amplify DDoS traffic, and
+# refreshes many zones at once. dns-master-01 lists this host in its
+# transfer_hosts ACL and also_notify.
+bind_dns_role: authoritative
+
+bind_acls:
+  trusted:
+    - 127.0.0.1
+    - ::1
+  transfer_hosts: []         # re-serves transfers to no one
+  recursion_clients: []      # recursion stays off
+  dns64_clients: []
+
+bind_zones:
+  - name: example.com
+    type: slave
+    masters:
+      - 10.0.1.10            # dns-master-01
+  - name: 1.0.10.in-addr.arpa
+    type: slave
+    masters:
+      - 10.0.1.10
+
+bind_chroot_enabled: true
+
+# Response rate limiting: at most 10 identical answers per second to one
+# client netblock (/24 for IPv4, /56 for IPv6). Over the limit, every 2nd
+# dropped answer is replaced by a small truncated reply ("slip"), so real
+# clients retry over TCP while spoofed-source floods get nothing useful.
+# Hosts in the trusted ACL are never limited.
+bind_rate_limit:
+  responses-per-second: 10
+  window: 5
+  slip: 2
+  exempt-clients:
+    - trusted
+
+# Answers to the whole internet: the query log would be both large and
+# expensive. Rate limiting logs what it drops under the rate-limit
+# category, which lands in default.log.
+bind_querylog: false
+bind_log_buffered: true
+
+# A secondary carrying many zones from one primary: let it refresh and
+# transfer more of them at once (BIND's defaults suit a handful of zones).
+bind_transfers_in: 50
+bind_transfers_per_ns: 20
+bind_serial_query_rate: 100

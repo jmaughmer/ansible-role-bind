@@ -40,10 +40,26 @@
   # named.service first starts (via named-setup-rndc.service) — too late
   # for configure.yml's named-checkconf validation on a fresh host. This is
   # the same command RHEL's /usr/libexec/generate-rndc-key.sh runs.
-  ansible.builtin.command: rndc-confgen -a -A hmac-sha256
+  ansible.builtin.command: >-
+    rndc-confgen -a -A {{ bind_rndc_key_algorithm }} -k {{ bind_rndc_key_name }}
   args:
     creates: /etc/rndc.key
   register: bind_rndc_keygen
+  when: bind_rndc_key_secret | length == 0
+
+- name: Install the supplied rndc key
+  ansible.builtin.template:
+    src: rndc.key.j2
+    dest: /etc/rndc.key
+    owner: root
+    group: "{{ bind_group }}"
+    mode: "0640"
+    setype: _default
+  no_log: true   # keeps the secret out of output, -v and --diff
+  # A restart, not a reload: named-chroot sees /etc/rndc.key through a bind
+  # mount of the old file, which only a restart re-creates.
+  notify: restart named
+  when: bind_rndc_key_secret | length > 0
 
 - name: Restrict the rndc key to root and named
   ansible.builtin.file:
@@ -53,4 +69,6 @@
     mode: "0640"
     setype: _default
   # In check mode on a fresh host, the key above wasn't actually generated.
-  when: not (ansible_check_mode and bind_rndc_keygen is changed)
+  when:
+    - bind_rndc_key_secret | length == 0
+    - not (ansible_check_mode and bind_rndc_keygen is changed)

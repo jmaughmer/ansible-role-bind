@@ -31,6 +31,9 @@ platforms:
 
 provisioner:
   name: ansible
+  env:
+    # Decrypts the test rndc key in host_vars/ns-chroot.yml.
+    ANSIBLE_VAULT_PASSWORD_FILE: ${MOLECULE_SCENARIO_DIRECTORY}/vault-password.sh
   inventory:
     links:
       group_vars: ../default/inventory/group_vars/

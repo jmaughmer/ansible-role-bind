@@ -1,0 +1,57 @@
+---
+# Resolver for an office network with Active Directory: full recursion for
+# internet names, but the AD domain and the internal reverse zone are
+# forwarded to the domain controllers (conditional forwarding). dnstap
+# records every query and answer, and the export sends them to
+# Elasticsearch with each answer's response time.
+bind_dns_role: recursive
+
+# validate-except and dnstap rotation need BIND 9.16, which RHEL 8 only
+# has as the separate bind9.16 package. RHEL 9+ ships it as the base bind.
+bind_use_bind9_16: "{{ ansible_facts['distribution_major_version'] | int == 8 }}"
+
+bind_acls:
+  trusted:
+    - 127.0.0.1
+    - ::1
+  transfer_hosts: []
+  recursion_clients:
+    - 127.0.0.1
+    - ::1
+    - 10.20.0.0/16           # office LAN and VPN
+  dns64_clients: []
+
+# Forward zones: queries for these names (and everything under them) go
+# only to the listed servers. They need no zone files and no transfers.
+bind_zones:
+  - name: corp.internal      # the AD domain
+    type: forward
+    forward_policy: only     # never ask the internet about corp.internal
+    forwarders:
+      - 10.20.1.10           # dc01.corp.internal
+      - 10.20.1.11           # dc02.corp.internal
+  - name: 20.10.in-addr.arpa # PTR lookups for 10.20.0.0/16
+    type: forward
+    forward_policy: only
+    forwarders:
+      - 10.20.1.10
+      - 10.20.1.11
+
+# corp.internal isn't signed, and the root zone proves .internal doesn't
+# exist, so DNSSEC validation would reject every answer the domain
+# controllers give for it (SERVFAIL). Exempt it. The reverse zone needs
+# nothing: 10.in-addr.arpa is already an unsigned delegation.
+bind_dnssec_validate_except:
+  - corp.internal
+
+# Capture every client query and answer, and export them to Elasticsearch
+# (see the README's "Exporting dnstap to Elasticsearch"). Capturing the
+# queries too lets the export record each answer's response time
+# (event.duration).
+bind_dnstap_enabled: true
+bind_dnstap_types:
+  - client query
+  - client response
+bind_dnstap_export_enabled: true
+# dnstap replaces the query log for analysis, and costs less.
+bind_querylog: false

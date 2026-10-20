@@ -2,7 +2,7 @@
 # Caching resolver forwarding example.test to the primary, with DNS64,
 # tuning options and dnstap export.
 bind_dns_role: recursive
-# dnstap needs BIND 9.12+: on EL8 that means bind9.16.
+# dnstap and validate-except need BIND 9.12+/9.13.3+: on EL8 that means bind9.16.
 bind_use_bind9_16: "{{ ansible_facts['distribution_major_version'] | int == 8 }}"
 bind_acls:
   trusted: [127.0.0.1, "::1"]
@@ -11,9 +11,10 @@ bind_acls:
   # verify.yml can check that it's REFUSED.
   recursion_clients: [127.0.0.0/8, "::1", "{{ test_master_ip }}"]
   dns64_clients: [127.0.0.0/8, "::1"]
-# example.test isn't delegated from the real root, so DNSSEC validation of
-# the forwarded answers can never succeed here.
-bind_dnssec_validation: "no"
+# example.test isn't delegated from the real root, which proves it doesn't
+# exist, so validating the forwarded answers would fail. Exempt it, leaving
+# validation (auto) on for everything else.
+bind_dnssec_validate_except: [example.test]
 bind_dns64_enabled: true
 bind_dns64_options:
   exclude: ["::ffff:0:0/96"]

@@ -1,0 +1,40 @@
+---
+# Caching-only resolver: no zones of its own and no forwarders. named
+# resolves every name itself, starting from the root servers, validates
+# DNSSEC signatures, and caches the answers for internal clients. The
+# simplest resolver setup; start here unless you need DNS64, GeoIP or
+# conditional forwarding (see dns-recursive-01 and dns-resolver-02).
+bind_dns_role: recursive   # turns recursion on
+
+bind_acls:
+  trusted:
+    - 127.0.0.1
+    - ::1
+  transfer_hosts: []       # unused: this host serves no zones
+  # Who may use this resolver. The role refuses "any" (or a nested ACL that
+  # reaches it): an open resolver gets abused for DDoS reflection.
+  recursion_clients:
+    - 127.0.0.1            # the server itself
+    - ::1
+    - 10.0.0.0/8
+    - 172.16.0.0/12
+    - 192.168.0.0/16
+  dns64_clients: []
+
+# No bind_forwarders: full recursion from the root servers. Outbound UDP
+# and TCP port 53 to the internet must be open from this host.
+# bind_dnssec_validation stays at its default, auto: named validates with
+# the root trust anchor it ships with and keeps it current itself.
+
+# Sizing for a dedicated resolver. max-cache-size is left at BIND's
+# default (90% of RAM); set it, e.g. "50%" or "4g", if named shares the
+# host with other services.
+bind_recursive_clients: 5000   # concurrent recursive lookups (BIND default 1000)
+bind_tcp_clients: 500          # concurrent TCP clients (BIND default 150)
+
+# Query logging is named's most expensive per-query work; a busy resolver
+# that doesn't ship queries.log anywhere is better off without it.
+bind_querylog: false
+bind_log_buffered: true
+
+bind_zones: []

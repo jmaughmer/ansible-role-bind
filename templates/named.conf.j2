@@ -6,7 +6,7 @@
 include "/etc/rndc.key";
 
 controls {
-    inet 127.0.0.1 port 953 allow { 127.0.0.1; } keys { "rndc-key"; };
+    inet 127.0.0.1 port 953 allow { 127.0.0.1; } keys { "{{ bind_rndc_key_name }}"; };
 };
 
 include "{{ bind_conf_dir }}/acls.conf";

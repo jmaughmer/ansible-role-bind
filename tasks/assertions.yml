@@ -71,6 +71,30 @@
       bind_dnstap_enabled off.
   when: bind_dnstap_enabled
 
+- name: Fail if the supplied rndc key isn't usable
+  ansible.builtin.assert:
+    that:
+      - bind_rndc_key_algorithm in ['hmac-md5', 'hmac-sha1', 'hmac-sha224', 'hmac-sha256', 'hmac-sha384', 'hmac-sha512']
+      - bind_rndc_key_name is match('^[A-Za-z0-9][A-Za-z0-9._-]*$')
+      - bind_rndc_key_secret | length == 0 or bind_rndc_key_secret is match('^[A-Za-z0-9+/]+={0,2}$')
+    # A failed assert reports the expression, not the values, and this
+    # message names the variables only, so the secret is never printed.
+    fail_msg: >-
+      bind_rndc_key_algorithm must be one of hmac-md5, hmac-sha1, hmac-sha224, hmac-sha256,
+      hmac-sha384 or hmac-sha512; bind_rndc_key_name must be letters, digits, dots, dashes and
+      underscores; and bind_rndc_key_secret, when set, must be base64 (as rndc-confgen prints it).
+    quiet: true
+
+- name: Fail if validate-except is set on a BIND version that doesn't support it
+  ansible.builtin.assert:
+    that:
+      - bind_dnssec_policy_supported
+    fail_msg: >-
+      bind_dnssec_validate_except is set, but {{ ansible_facts['distribution'] }} {{ ansible_facts['distribution_major_version'] }}
+      is running BIND 9.11, which has no validate-except option (added in BIND 9.13.3). Set
+      bind_use_bind9_16: true to move this host to BIND 9.16, or set bind_dnssec_validation: no.
+  when: bind_dnssec_validate_except | length > 0
+
 - name: Fail if a dnstap message type isn't one BIND recognizes
   ansible.builtin.assert:
     that:

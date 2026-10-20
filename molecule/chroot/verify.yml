@@ -44,7 +44,31 @@
       failed_when: listed.stdout != '1'
       loop: [/var/log/named, /srv/named-extra]
 
-    - name: Check rndc reaches the chrooted named
+    - name: Read the rndc key
+      ansible.builtin.slurp:
+        src: /etc/rndc.key
+      register: rndc_key
+      no_log: true
+
+    - name: Check the supplied rndc key replaced the generated one
+      ansible.builtin.assert:
+        that:
+          - "'key \"molecule-rndc\"' in rndc_key.content | b64decode"
+          - bind_rndc_key_secret in rndc_key.content | b64decode
+        quiet: true
+      no_log: true
+
+    - name: Check the rndc key is readable by named only
+      ansible.builtin.stat:
+        path: /etc/rndc.key
+      register: rndc_key_stat
+      failed_when: >-
+        rndc_key_stat.stat.pw_name != 'root' or rndc_key_stat.stat.gr_name != 'named'
+        or rndc_key_stat.stat.mode != '0640'
+
+    # The chrooted named sees the key through a bind mount, so this only
+    # works if the key change restarted named-chroot.
+    - name: Check rndc reaches the chrooted named with the supplied key
       ansible.builtin.command: rndc status
       changed_when: false
 

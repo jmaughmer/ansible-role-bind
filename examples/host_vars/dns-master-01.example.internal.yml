@@ -1,5 +1,6 @@
 ---
-# Master: authoritative for example.com, allows AXFR/IXFR to the slave only.
+# Master: authoritative for example.com, allows AXFR/IXFR to its two
+# secondaries only (dns-slave-01 and dns-edge-01).
 bind_dns_role: authoritative
 
 bind_acls:
@@ -8,6 +9,7 @@ bind_acls:
     - ::1
   transfer_hosts:
     - 10.0.1.11         # dns-slave-01
+    - 10.0.1.12         # dns-edge-01
   recursion_clients: []  # unused — recursion stays off on authoritative hosts
   dns64_clients: []       # unused
 
@@ -56,6 +58,7 @@ bind_zones:
     allow_transfer_acl: transfer_hosts
     also_notify:
       - 10.0.1.11
+      - 10.0.1.12
     dnssec: true
     # Everything below is optional — omit `records`/`primary_ns`/etc. entirely
     # to manage the zone file out of band; the role will just check it exists.
@@ -77,6 +80,7 @@ bind_zones:
     allow_transfer_acl: transfer_hosts
     also_notify:
       - 10.0.1.11
+      - 10.0.1.12
     primary_ns: ns1.example.com
     admin_email: hostmaster.example.com
     nameservers:

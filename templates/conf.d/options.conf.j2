@@ -56,6 +56,9 @@ options {
 
 {# An unquoted yes/no in YAML arrives as a boolean, which would render as True/False. #}
     dnssec-validation {{ (('yes' if bind_dnssec_validation else 'no') if bind_dnssec_validation is boolean else bind_dnssec_validation) }};
+{% if bind_dnssec_validate_except | length > 0 %}
+    validate-except { {% for domain in bind_dnssec_validate_except %}"{{ domain }}"; {% endfor %}};
+{% endif %}
 
     zone-statistics {{ 'yes' if bind_zone_statistics else 'no' }};
 

@@ -77,6 +77,21 @@ bind_version_string: "not disclosed"
 bind_hostname_string: "not disclosed"
 
 # -----------------------------------------------------------------------------
+# rndc control key (/etc/rndc.key)
+# -----------------------------------------------------------------------------
+# By default the role generates a random key on each host the first time
+# (rndc-confgen, as RHEL itself would) and then leaves it alone. To use a
+# key you already have instead — e.g. to keep a host's existing key across
+# a rebuild, or to manage every server's key centrally — supply its base64
+# secret from Ansible Vault, never in plain text:
+#   bind_rndc_key_secret: "{{ vault_bind_rndc_key_secret }}"
+# The role then writes /etc/rndc.key from these variables on every run.
+# Generate a secret with: rndc-confgen -A hmac-sha256 | grep secret
+bind_rndc_key_secret: ""
+bind_rndc_key_name: rndc-key          # also used in named.conf's controls block
+bind_rndc_key_algorithm: hmac-sha256  # hmac-md5 | hmac-sha1 | hmac-sha224 | hmac-sha256 | hmac-sha384 | hmac-sha512
+
+# -----------------------------------------------------------------------------
 # ACLs — name: list of match elements (bare, no trailing semicolon).
 # Elements may be networks, other acl names, "key <name>", or (with GeoIP
 # enabled) "geoip country US" style match elements.
@@ -125,6 +140,14 @@ bind_dns64_options: {}
 # DNSSEC
 # -----------------------------------------------------------------------------
 bind_dnssec_validation: auto   # auto | yes | no  (validate signatures on lookups)
+# Domains (and everything under them) answered without DNSSEC validation,
+# for resolvers that conditionally forward private names to internal
+# servers — e.g. an Active Directory domain under .internal, or a private
+# subdomain of a signed public domain. The public DNSSEC chain proves those
+# names don't exist, so without this every forwarded answer for them is
+# treated as forged and comes back SERVFAIL. Renders validate-except, which
+# needs BIND 9.13.3+: RHEL 9+, or RHEL 8 with bind_use_bind9_16: true.
+bind_dnssec_validate_except: []
 # Automatic signing of locally-hosted master zones via BIND's built-in
 # dnssec-policy + inline-signing. Requires BIND 9.16+: on RHEL 9+ that's
 # already the base 'bind' package; on RHEL 8 this role automatically pulls
