@@ -95,6 +95,15 @@
       bind_use_bind9_16: true to move this host to BIND 9.16, or set bind_dnssec_validation: no.
   when: bind_dnssec_validate_except | length > 0
 
+- name: Fail if dnstap is enabled with no message types to capture
+  ansible.builtin.assert:
+    that:
+      - bind_dnstap_types_list | length > 0
+    fail_msg: >-
+      bind_dnstap_enabled is true but bind_dnstap_types is empty — give at least one type,
+      e.g. 'client response' or 'all'.
+  when: bind_dnstap_enabled
+
 - name: Fail if a dnstap message type isn't one BIND recognizes
   ansible.builtin.assert:
     that:
@@ -102,7 +111,7 @@
     fail_msg: >-
       bind_dnstap_types entry '{{ item }}' isn't valid — use all, auth, client, forwarder or resolver,
       optionally followed by query or response (e.g. 'client response').
-  loop: "{{ bind_dnstap_types }}"
+  loop: "{{ bind_dnstap_types_list }}"
   when: bind_dnstap_enabled
 
 - name: Fail if dnstap export is enabled without dnstap

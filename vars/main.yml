@@ -10,6 +10,11 @@ bind_dnssec_policy_supported: "{{ bind_use_bind9_16 or (ansible_facts['distribut
 # 9.12 — so the same split as above: 9.16+ yes, RHEL 8's base 9.11 no.
 bind_dnstap_rotation_supported: "{{ bind_dnssec_policy_supported }}"
 
+# bind_dnstap_types as a list, so a single type can be given as a plain
+# string ("all") as well as a list ([all]). Iterating a string would loop
+# over its characters.
+bind_dnstap_types_list: "{{ [bind_dnstap_types] if bind_dnstap_types is string else bind_dnstap_types | list }}"
+
 # named-chroot's root, fixed by the bind-chroot/bind9.16-chroot unit file.
 bind_chroot_dir: /var/named/chroot
 # Host paths the role adds to /etc/named-chroot.files (RHEL's own list

@@ -280,7 +280,7 @@ bind_dnstap_enabled: false
 # and record its latency (event.duration): add "auth query" on authoritative
 # hosts (named logs queries it answers from its own zones, recursion off, as
 # auth queries, so "client query" captures nothing there) or "client query"
-# on resolvers.
+# on resolvers. A single type can also be given as a string, e.g. "all".
 bind_dnstap_types:
   - client response
 # Written into bind_log_dir, so the chroot bind mount and the named_log_t

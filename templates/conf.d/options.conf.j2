@@ -103,7 +103,7 @@ options {
 
     // dnstap: full DNS messages, answer sections included, which the text
     // query log can't carry. Binary; read with: dnstap-read -p <file>
-    dnstap { {% for message_type in bind_dnstap_types %}{{ message_type }}; {% endfor %}};
+    dnstap { {% for message_type in bind_dnstap_types_list %}{{ message_type }}; {% endfor %}};
     dnstap-output file "{{ bind_log_dir }}/{{ bind_dnstap_file }}" size {{ bind_dnstap_file_size }} versions {{ bind_dnstap_file_versions }} suffix increment;
 {% endif %}
 
