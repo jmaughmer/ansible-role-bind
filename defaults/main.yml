@@ -128,11 +128,16 @@ bind_forward_policy: first   # first | only
 # -----------------------------------------------------------------------------
 bind_dns64_enabled: false
 bind_dns64_prefix: "64:ff9b::/96"
+# Who gets DNS64 synthesis: the dns64 block's "clients" address match list.
+# One element as a string (an ACL name, the default), or a list mixing ACL
+# names, addresses/CIDRs, "!"-negated elements and "geoip ..." elements:
+#   bind_dns64_clients_acl: [dns64_clients, 192.0.2.0/24, "!10.9.0.0/16"]
 bind_dns64_clients_acl: dns64_clients
 # Extra dns64 sub-clauses. exclude/mapped take an address match list (a
 # string or a list) and render as "key { value; ... };"; suffix takes one
 # IPv6 address and recursive-only/break-dnssec a boolean, rendered as
-# "key value;". clients comes from bind_dns64_clients_acl above. E.g.
+# "key value;". clients comes from bind_dns64_clients_acl above (the role
+# rejects a clients key here). E.g.
 #   bind_dns64_options: { exclude: ["64:ff9b::/96"], suffix: "::", recursive-only: true }
 bind_dns64_options: {}
 

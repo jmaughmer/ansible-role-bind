@@ -36,9 +36,9 @@ options {
 
 {% if bind_dns64_enabled %}
     dns64 {{ bind_dns64_prefix }} {
-        clients { {{ bind_dns64_clients_acl }}; };
+        clients { {% for element in bind_dns64_clients_list %}{{ element }}; {% endfor %}};
 {% for key, value in bind_dns64_options.items() %}
-{% if key in ['clients', 'exclude', 'mapped'] %}
+{% if key in ['exclude', 'mapped'] %}
         {{ key }} { {% for element in ([value] if value is string else value) %}{{ element }}; {% endfor %}};
 {% elif value is boolean %}
         {{ key }} {{ 'yes' if value else 'no' }};

@@ -134,6 +134,14 @@ bind_dns64_enabled: true
 bind_zones: []
 ```
 
+DNS64 synthesis goes to the clients in `bind_dns64_clients_acl`. By
+default that's the `dns64_clients` ACL. It also takes a list, mixing ACL
+names, addresses or CIDRs, negations and `geoip` elements:
+
+```yaml
+bind_dns64_clients_acl: [dns64_clients, 192.0.2.0/24, "!10.9.0.0/16"]
+```
+
 ### Conditional forwarding
 
 A `type: forward` zone sends queries for one domain to specific servers,

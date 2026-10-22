@@ -16,6 +16,9 @@ bind_acls:
 # validation (auto) on for everything else.
 bind_dnssec_validate_except: [example.test]
 bind_dns64_enabled: true
+# A list: the ACL plus a literal network and a negated one, so named has to
+# accept every kind of element. Loopback still gets DNS64 through the ACL.
+bind_dns64_clients_acl: [dns64_clients, 198.51.100.0/24, "!203.0.113.0/24"]
 bind_dns64_options:
   exclude: ["::ffff:0:0/96"]
   recursive-only: false

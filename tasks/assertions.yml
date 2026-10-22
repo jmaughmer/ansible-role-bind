@@ -130,6 +130,17 @@
     fail_msg: "bind_dns64_enabled requires bind_recursion_enabled: true — DNS64 only applies to recursive resolution."
   when: bind_dns64_enabled
 
+- name: Fail if the DNS64 client list is unusable
+  ansible.builtin.assert:
+    that:
+      - bind_dns64_clients_list | length > 0
+      - "'clients' not in bind_dns64_options"
+    fail_msg: >-
+      bind_dns64_clients_acl must name at least one ACL or address match element (it renders the dns64
+      block's clients list), and bind_dns64_options must not set clients as well — named rejects a second
+      clients clause. Put every DNS64 client in bind_dns64_clients_acl, as a string or a list.
+  when: bind_dns64_enabled
+
 - name: Fail if the same zone name is defined more than once
   # Across both bind_zones directly and everything bind_zones_dir loaded —
   # load_zones.yml already merged both into bind_zones by this point, so
