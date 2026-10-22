@@ -5,6 +5,17 @@
       - bind_dns_role in ['authoritative', 'recursive']
     fail_msg: "bind_dns_role must be 'authoritative' or 'recursive', got '{{ bind_dns_role }}'"
 
+- name: Fail if the forwarding policy is invalid or has nothing to forward to
+  # The forward statement is only rendered alongside a forwarders list, so
+  # "only" with no forwarders would silently resolve from the root servers.
+  ansible.builtin.assert:
+    that:
+      - bind_forward_policy in ['first', 'only']
+      - bind_forward_policy != 'only' or bind_forwarders | length > 0
+    fail_msg: >-
+      bind_forward_policy must be 'first' or 'only' (got '{{ bind_forward_policy }}'), and 'only' needs at
+      least one entry in bind_forwarders — without forwarders named would resolve from the root servers.
+
 - name: Fail if recursion is enabled with a wide-open recursion or cache ACL
   # Checks both allow-recursion and allow-query-cache, whether the setting
   # names "any" (or 0.0.0.0/0, ::/0) directly or reaches it through ACLs

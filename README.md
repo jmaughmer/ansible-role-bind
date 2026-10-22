@@ -134,6 +134,15 @@ bind_dns64_enabled: true
 bind_zones: []
 ```
 
+With `bind_forward_policy: first`, named asks the forwarders first and,
+if they don't answer, resolves the name itself from the root servers. Set
+it to `only` to use the forwarders and nothing else. Then named never
+looks anything up from the root hints, and clients get SERVFAIL while the
+forwarders are unreachable. Use `only` on servers that must not or can't
+query the internet's DNS directly. The role requires at least one
+forwarder with `only`: without one, named would silently fall back to
+full recursion.
+
 DNS64 synthesis goes to the clients in `bind_dns64_clients_acl`. By
 default that's the `dns64_clients` ACL. It also takes a list, mixing ACL
 names, addresses or CIDRs, negations and `geoip` elements:

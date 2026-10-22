@@ -120,6 +120,13 @@ bind_recursion_enabled: "{{ true if bind_dns_role == 'recursive' else false }}"
 bind_allow_recursion_acl: recursion_clients
 bind_allow_query_cache_acl: recursion_clients
 
+# Upstream resolvers for recursive lookups. bind_forward_policy:
+#   first — ask the forwarders, and if they don't answer, resolve the name
+#           itself starting from the root servers (root hints).
+#   only  — use the forwarders and nothing else: no root-hint lookups ever;
+#           if the forwarders don't answer, clients get SERVFAIL. Use this
+#           where the server must not (or can't) reach the internet's DNS
+#           directly. Requires at least one forwarder.
 bind_forwarders: []
 bind_forward_policy: first   # first | only
 
