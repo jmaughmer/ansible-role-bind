@@ -230,19 +230,29 @@ bind_geoipupdate_run_now: false          # actually invoke geoipupdate during th
 # -----------------------------------------------------------------------------
 # Logging
 # -----------------------------------------------------------------------------
-# false (default) = one file per category under bind_log_dir, e.g.
-#   /var/log/named/queries.log, /var/log/named/xfer-in.log, ...
-# true  = every category routed into a single bind_log_consolidated_file,
-#   in the exact layout elastic-bind/named.conf.logging.conf
-#   uses, for drop-in compatibility with that ingest pipeline.
+# Two layouts, usable separately or together:
+#   bind_log_consolidated: every category in one bind_log_consolidated_file,
+#     in the exact layout elastic-bind/named.conf.logging.conf uses, for
+#     drop-in compatibility with that ingest pipeline.
+#   bind_log_individual_files: one file per category under bind_log_dir,
+#     e.g. /var/log/named/queries.log, /var/log/named/xfer-in.log, ...
+# The default is individual files only. Setting bind_log_consolidated: true
+# switches to the consolidated file only; also set
+# bind_log_individual_files: true to write both (each line then goes to
+# named.log and to its category's file — ship only named.log).
 bind_log_consolidated: false
+bind_log_individual_files: "{{ not bind_log_consolidated }}"
 bind_log_consolidated_file: named.log
-# Consolidated layout only: categories kept out of bind_log_consolidated_file
-# and written to their own local file instead ({{ bind_log_dir }}/<category>.log),
-# e.g. [queries] keeps a local query log that the log shipper reading
-# bind_log_consolidated_file never sends. Each must also be in
-# bind_log_categories. (In the per-category layout every category already
-# has its own file: leave queries.log out of the shipper's paths instead.)
+# Rolling for the consolidated file, separately from the per-category files
+# (bind_log_file_size/_versions below), since it collects every category.
+bind_log_consolidated_size: "{{ bind_log_file_size }}"
+bind_log_consolidated_versions: "{{ bind_log_file_versions }}"
+# Categories kept out of bind_log_consolidated_file and written only to their
+# own local file ({{ bind_log_dir }}/<category>.log), e.g. [queries] keeps a
+# local query log that the log shipper reading bind_log_consolidated_file
+# never sends. Each must also be in bind_log_categories. Only matters with
+# bind_log_consolidated; in the individual-files-only layout, leave
+# queries.log out of the shipper's paths instead.
 bind_log_consolidated_exclude: []
 
 # Matches the 17 categories elastic-bind's grok/simulate data
@@ -271,8 +281,8 @@ bind_log_severity: info      # severity per channel; "dynamic" tracks named -d l
 # existing pipeline's primary grok matches. Set to "iso8601-utc" only if
 # every target host is confirmed BIND 9.12+.
 bind_log_print_time: "yes"   # yes | iso8601-utc
-bind_log_file_versions: 3    # rolled files kept per log, besides the live one (dnstap uses the same by default)
-bind_log_file_size: 100m
+bind_log_file_versions: 3    # rolled files kept per per-category log, besides the live one (dnstap uses the same by default)
+bind_log_file_size: 100m     # size at which a per-category log rolls
 
 # DNS answers (dnstap). The "queries" category above only ever logs the
 # question (name, class, type, flags); BIND has no text log channel that

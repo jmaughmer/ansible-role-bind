@@ -84,20 +84,29 @@
       ansible.builtin.command: "grep -c 'query: www.chroot.test' /var/log/named/queries.log"
       changed_when: false
 
-    # bind_log_consolidated_exclude: [queries] keeps the query log local.
-    - name: Check the consolidated log has the other categories but no queries
+    # Both layouts: every category goes to named.log and its own file, except
+    # queries (bind_log_consolidated_exclude), which stays local only.
+    - name: Count general and queries lines in named.log and general.log
       ansible.builtin.shell: >-
-        set -o pipefail;
-        rndc reload >/dev/null;
-        grep -c ' general: ' /var/log/named/named.log;
-        grep -c ' queries: ' /var/log/named/named.log || true
-      args:
-        executable: /bin/bash
-      register: consolidated
+        rndc reload >/dev/null &&
+        for f in named general; do for c in general queries; do
+        echo "$f.$c=$(grep -c " $c: " /var/log/named/$f.log)"; done; done
+      register: log_counts
       changed_when: false
-      failed_when: >-
-        consolidated.rc != 0 or consolidated.stdout_lines | length != 2
-        or consolidated.stdout_lines[0] | int == 0 or consolidated.stdout_lines[1] | int != 0
+
+    - name: Check the routing of both layouts
+      vars:
+        counts: "{{ dict(log_counts.stdout_lines | map('split', '=') | list) }}"
+      ansible.builtin.assert:
+        that:
+          - counts['named.general'] | int > 0     # consolidated file gets the other categories
+          - counts['named.queries'] | int == 0    # ...but not the excluded queries
+          - counts['general.general'] | int > 0   # per-category file written alongside it
+        fail_msg: "Unexpected log routing: {{ counts }}"
+
+    - name: Check named.log uses its own rolling settings
+      ansible.builtin.command: grep -F 'named.log" versions 4 size 50m;' /etc/named/conf.d/logging.conf
+      changed_when: false
 
     - name: Check dnstap writes through the bind-mounted log directory
       ansible.builtin.stat:

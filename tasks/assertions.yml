@@ -106,6 +106,20 @@
       bind_use_bind9_16: true to move this host to BIND 9.16, or set bind_dnssec_validation: no.
   when: bind_dnssec_validate_except | length > 0
 
+- name: Fail if the logging layout writes nowhere or two logs share a file
+  vars:
+    bind_log_own_files: >-
+      {{ (bind_log_categories if bind_log_individual_files | bool else bind_log_consolidated_exclude_list)
+         | map('regex_replace', '$', '.log') | list }}
+  ansible.builtin.assert:
+    that:
+      - bind_log_consolidated or bind_log_individual_files | bool
+      - not bind_log_consolidated or bind_log_consolidated_file not in bind_log_own_files
+    fail_msg: >-
+      Turn on at least one of bind_log_consolidated and bind_log_individual_files, and give
+      bind_log_consolidated_file ('{{ bind_log_consolidated_file }}') a name that no category's own file
+      (<category>.log) uses.
+
 - name: Fail if a category kept out of the consolidated log isn't logged at all
   ansible.builtin.assert:
     that:

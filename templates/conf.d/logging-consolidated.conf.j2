@@ -3,13 +3,17 @@
 // bind-elasticsearch-pipeline/named.conf.logging.conf (apart from how many
 // rolled files are kept), for drop-in use with that ingest pipeline
 // (Fleet "Paths": {{ bind_log_dir }}/{{ bind_log_consolidated_file }}).
+{% if bind_log_individual_files | bool %}
+// Every category is also written to its own file, {{ bind_log_dir }}/<category>.log.
+{% endif %}
 {% if bind_log_consolidated_exclude_list %}
 // Kept local, in their own files and out of the shipped file:
 // {{ bind_log_consolidated_exclude_list | join(', ') }}.
 {% endif %}
+{% set own_file = bind_log_categories if bind_log_individual_files | bool else bind_log_consolidated_exclude_list %}
 logging {
     channel elastic_log {
-        file "{{ bind_log_dir }}/{{ bind_log_consolidated_file }}" versions {{ bind_log_file_versions }} size {{ bind_log_file_size }};
+        file "{{ bind_log_dir }}/{{ bind_log_consolidated_file }}" versions {{ bind_log_consolidated_versions }} size {{ bind_log_consolidated_size }};
         print-time {{ (('yes' if bind_log_print_time else 'no') if bind_log_print_time is boolean else bind_log_print_time) }};
         print-severity yes;
         print-category yes;
@@ -18,7 +22,7 @@ logging {
         buffered yes;
 {% endif %}
     };
-{% for category in bind_log_consolidated_exclude_list %}
+{% for category in own_file %}
 
     channel {{ category }}_log {
         file "{{ bind_log_dir }}/{{ category }}.log" versions {{ bind_log_file_versions }} size {{ bind_log_file_size }};
@@ -33,6 +37,8 @@ logging {
 {% endfor %}
 
 {% for category in bind_log_categories %}
-    category {{ category }} { {{ (category ~ '_log') if category in bind_log_consolidated_exclude_list else 'elastic_log' }}; };
+{%   set channels = ([] if category in bind_log_consolidated_exclude_list else ['elastic_log'])
+                    + ([category ~ '_log'] if category in own_file else []) %}
+    category {{ category }} { {% for channel in channels %}{{ channel }}; {% endfor %}};
 {% endfor %}
 };

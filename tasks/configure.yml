@@ -61,7 +61,7 @@
     owner: root
     group: "{{ bind_group }}"
     mode: "0640"
-  when: not bind_log_consolidated
+  when: not bind_log_consolidated and bind_log_individual_files | bool
   notify: reload named
 
 - name: Template consolidated (single-file) logging

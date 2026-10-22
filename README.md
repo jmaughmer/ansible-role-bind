@@ -52,7 +52,7 @@ forwarders) applies to both and is controlled independently.
 | DNS64 | `bind_dns64_enabled`, `bind_dns64_prefix`, `bind_dns64_clients_acl`, `bind_dns64_options` |
 | Recursion + its ACL | `bind_recursion_enabled`, `bind_allow_recursion_acl` |
 | Recursive forwarding | `bind_forwarders`, `bind_forward_policy` |
-| Per-category log files | `bind_log_consolidated`, `bind_log_consolidated_exclude`, `bind_log_categories`, `bind_log_dir` |
+| Log files (per category, consolidated, or both) | `bind_log_consolidated`, `bind_log_individual_files`, `bind_log_consolidated_size`/`_versions`, `bind_log_consolidated_exclude`, `bind_log_categories`, `bind_log_dir` |
 | DNS answer logging (dnstap) | `bind_dnstap_enabled`, `bind_dnstap_types`, `bind_dnstap_file` |
 | dnstap export to Elasticsearch | `bind_dnstap_export_enabled`, `bind_dnstap_export_interval`, `bind_dnstap_ndjson_file` |
 | Zone statistics | `bind_zone_statistics`, `bind_statistics_channels_enabled` |
@@ -503,24 +503,46 @@ Two things worth knowing that are about DNS itself, not this role:
 
 ## Logging: individual files, and the existing Elasticsearch pipeline
 
-`bind_log_consolidated: false` (default) gives one file per category —
-`{{ bind_log_dir }}/queries.log`, `xfer-in.log`, `security.log`, etc.
+By default the role writes one file per category:
+`{{ bind_log_dir }}/queries.log`, `xfer-in.log`, `security.log`, and so on.
 
 There's already an ingest pipeline for BIND logs in the companion
 repository [`elastic-bind`](https://github.com/jmaughmer/elastic-bind), built
 against a **single** consolidated log file with the same 17 categories this
-role defaults `bind_log_categories` to. The two are compatible either way:
+role defaults `bind_log_categories` to. Two variables pick the layout, and
+both can be on at once:
 
-- **Per-category files** (default here): point Elastic Agent's Custom Logs
-  "Paths" at `{{ bind_log_dir }}/*.log` instead of one filename. The pipeline
-  parses `bind.category` out of the line content (`print-category yes` is
-  set on every channel), not the filename, so this works unmodified.
-- **Consolidated file**: set `bind_log_consolidated: true` — the role then
+| `bind_log_consolidated` | `bind_log_individual_files` | Files written |
+|---|---|---|
+| `false` (default) | `true` (default) | one file per category |
+| `true` | `false` (default when consolidated) | `named.log` only |
+| `true` | `true` | `named.log` **and** one file per category |
+
+- **Per-category files**: point Elastic Agent's Custom Logs "Paths" at
+  `{{ bind_log_dir }}/*.log`. The pipeline parses `bind.category` out of the
+  line content (`print-category yes` is set on every channel), not the
+  filename, so this works unmodified.
+- **Consolidated file**: set `bind_log_consolidated: true`. The role then
   renders the *exact* channel/category layout from that pipeline's
   `named.conf.logging.conf` (same filename by default:
-  `{{ bind_log_dir }}/named.log`), for drop-in compatibility. The one
-  difference is how many rolled files are kept: `bind_log_file_versions`
-  (default 3) rather than that file's 10, which doesn't affect parsing.
+  `{{ bind_log_dir }}/named.log`), for drop-in compatibility.
+- **Both**: also set `bind_log_individual_files: true`. Every line goes to
+  `named.log` and to its category's own file, so you can ship the one file
+  and still read each category separately on the server. Point Elastic Agent
+  at `named.log` only: a `*.log` glob would send every line twice.
+
+**Rolling.** Per-category files roll at `bind_log_file_size` (default
+`100m`) and keep `bind_log_file_versions` (default 3) rolled copies besides
+the live one, so each takes at most about 400 MB. The consolidated file
+collects every category, so it has its own settings,
+`bind_log_consolidated_size` and `bind_log_consolidated_versions`. They
+default to the per-category values:
+
+```yaml
+bind_log_consolidated: true
+bind_log_consolidated_size: 500m
+bind_log_consolidated_versions: 5
+```
 
 **Keeping query logs local.** To keep a query log on the server without
 sending it to the log server, use the consolidated layout and exclude the
@@ -531,17 +553,14 @@ bind_log_consolidated: true
 bind_log_consolidated_exclude: [queries]
 ```
 
-Queries then go to `{{ bind_log_dir }}/queries.log`, with the same rolling,
-while everything else still goes to `named.log`, which Elastic Agent ships.
-Any category in `bind_log_categories` can be excluded the same way. In the
-per-category layout every category already has its own file, so there you
-point Elastic Agent's paths at the files you want instead of `*.log`, or
-add `queries.log` to its excluded files. To stop query logging altogether,
-set `bind_querylog: false`.
-
-Every log file rolls at `bind_log_file_size` (default `100m`) and keeps
-`bind_log_file_versions` (default 3) rolled copies besides the live one, so
-each log takes at most about 400 MB.
+Queries then go only to `{{ bind_log_dir }}/queries.log`, with the
+per-category rolling, while everything else still goes to `named.log`,
+which Elastic Agent ships. Any category in `bind_log_categories` can be
+excluded the same way, in the consolidated-only and in the both layout. In
+the per-category-only layout every category already has its own file, so
+there you point Elastic Agent's paths at the files you want instead of
+`*.log`, or add `queries.log` to its excluded files. To stop query logging
+altogether, set `bind_querylog: false`.
 
 Either way, `bind_log_print_time: "yes"` (the default) matches what that
 pipeline's grok expects as its primary format (BIND 9.11-safe legacy
