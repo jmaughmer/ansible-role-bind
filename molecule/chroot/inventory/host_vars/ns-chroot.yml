@@ -25,6 +25,10 @@ bind_rndc_key_secret: !vault |
   61323535666132333861353932383262376334656430323864366463363137643934643433393633
   313632303735383865626335323832626232
 bind_dnstap_enabled: true
+# Consolidated log (switched from prepare.yml's per-category layout), with
+# the query log kept local in its own file instead of the shipped named.log.
+bind_log_consolidated: true
+bind_log_consolidated_exclude: [queries]
 bind_zones:
   - name: chroot.test
     type: master

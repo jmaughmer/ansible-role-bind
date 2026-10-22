@@ -19,6 +19,11 @@ bind_dnstap_types_list: "{{ [bind_dnstap_types] if bind_dnstap_types is string e
 # string, or a list of address match elements.
 bind_dns64_clients_list: "{{ [bind_dns64_clients_acl] if bind_dns64_clients_acl is string else bind_dns64_clients_acl | list }}"
 
+# bind_log_consolidated_exclude as a list ("queries" or [queries]).
+bind_log_consolidated_exclude_list: >-
+  {{ [bind_log_consolidated_exclude] if bind_log_consolidated_exclude is string
+     else bind_log_consolidated_exclude | list }}
+
 # named-chroot's root, fixed by the bind-chroot/bind9.16-chroot unit file.
 bind_chroot_dir: /var/named/chroot
 # Host paths the role adds to /etc/named-chroot.files (RHEL's own list

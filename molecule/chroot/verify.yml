@@ -84,6 +84,21 @@
       ansible.builtin.command: "grep -c 'query: www.chroot.test' /var/log/named/queries.log"
       changed_when: false
 
+    # bind_log_consolidated_exclude: [queries] keeps the query log local.
+    - name: Check the consolidated log has the other categories but no queries
+      ansible.builtin.shell: >-
+        set -o pipefail;
+        rndc reload >/dev/null;
+        grep -c ' general: ' /var/log/named/named.log;
+        grep -c ' queries: ' /var/log/named/named.log || true
+      args:
+        executable: /bin/bash
+      register: consolidated
+      changed_when: false
+      failed_when: >-
+        consolidated.rc != 0 or consolidated.stdout_lines | length != 2
+        or consolidated.stdout_lines[0] | int == 0 or consolidated.stdout_lines[1] | int != 0
+
     - name: Check dnstap writes through the bind-mounted log directory
       ansible.builtin.stat:
         path: /var/log/named/dnstap.tap

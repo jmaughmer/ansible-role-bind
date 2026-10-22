@@ -52,7 +52,7 @@ forwarders) applies to both and is controlled independently.
 | DNS64 | `bind_dns64_enabled`, `bind_dns64_prefix`, `bind_dns64_clients_acl`, `bind_dns64_options` |
 | Recursion + its ACL | `bind_recursion_enabled`, `bind_allow_recursion_acl` |
 | Recursive forwarding | `bind_forwarders`, `bind_forward_policy` |
-| Per-category log files | `bind_log_consolidated`, `bind_log_categories`, `bind_log_dir` |
+| Per-category log files | `bind_log_consolidated`, `bind_log_consolidated_exclude`, `bind_log_categories`, `bind_log_dir` |
 | DNS answer logging (dnstap) | `bind_dnstap_enabled`, `bind_dnstap_types`, `bind_dnstap_file` |
 | dnstap export to Elasticsearch | `bind_dnstap_export_enabled`, `bind_dnstap_export_interval`, `bind_dnstap_ndjson_file` |
 | Zone statistics | `bind_zone_statistics`, `bind_statistics_channels_enabled` |
@@ -512,6 +512,23 @@ role defaults `bind_log_categories` to. The two are compatible either way:
   `{{ bind_log_dir }}/named.log`), for drop-in compatibility. The one
   difference is how many rolled files are kept: `bind_log_file_versions`
   (default 3) rather than that file's 10, which doesn't affect parsing.
+
+**Keeping query logs local.** To keep a query log on the server without
+sending it to the log server, use the consolidated layout and exclude the
+`queries` category from the shipped file:
+
+```yaml
+bind_log_consolidated: true
+bind_log_consolidated_exclude: [queries]
+```
+
+Queries then go to `{{ bind_log_dir }}/queries.log`, with the same rolling,
+while everything else still goes to `named.log`, which Elastic Agent ships.
+Any category in `bind_log_categories` can be excluded the same way. In the
+per-category layout every category already has its own file, so there you
+point Elastic Agent's paths at the files you want instead of `*.log`, or
+add `queries.log` to its excluded files. To stop query logging altogether,
+set `bind_querylog: false`.
 
 Every log file rolls at `bind_log_file_size` (default `100m`) and keeps
 `bind_log_file_versions` (default 3) rolled copies besides the live one, so

@@ -230,6 +230,13 @@ bind_geoipupdate_run_now: false          # actually invoke geoipupdate during th
 #   uses, for drop-in compatibility with that ingest pipeline.
 bind_log_consolidated: false
 bind_log_consolidated_file: named.log
+# Consolidated layout only: categories kept out of bind_log_consolidated_file
+# and written to their own local file instead ({{ bind_log_dir }}/<category>.log),
+# e.g. [queries] keeps a local query log that the log shipper reading
+# bind_log_consolidated_file never sends. Each must also be in
+# bind_log_categories. (In the per-category layout every category already
+# has its own file: leave queries.log out of the shipper's paths instead.)
+bind_log_consolidated_exclude: []
 
 # Matches the 17 categories elastic-bind's grok/simulate data
 # covers. Add/remove categories here; both logging layouts iterate this list.

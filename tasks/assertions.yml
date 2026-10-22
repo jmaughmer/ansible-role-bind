@@ -95,6 +95,16 @@
       bind_use_bind9_16: true to move this host to BIND 9.16, or set bind_dnssec_validation: no.
   when: bind_dnssec_validate_except | length > 0
 
+- name: Fail if a category kept out of the consolidated log isn't logged at all
+  ansible.builtin.assert:
+    that:
+      - item in bind_log_categories
+    fail_msg: >-
+      bind_log_consolidated_exclude names '{{ item }}', which isn't in bind_log_categories, so named
+      wouldn't log it anywhere. Add it to bind_log_categories, or drop it from the exclude list.
+  loop: "{{ bind_log_consolidated_exclude_list }}"
+  when: bind_log_consolidated
+
 - name: Fail if dnstap is enabled with no message types to capture
   ansible.builtin.assert:
     that:
