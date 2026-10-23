@@ -34,7 +34,7 @@ zone "{{ zone.name }}" {
 {% elif zone.type == 'forward' %}
     forward {{ zone.forward_policy | default('only') }};
     forwarders {
-{% for ip in zone.forwarders %}
+{% for ip in ([zone.forwarders] if zone.forwarders is string else zone.forwarders) %}
         {{ ip }};
 {% endfor %}
     };

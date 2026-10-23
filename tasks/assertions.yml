@@ -201,6 +201,40 @@
     label: "{{ item.name }}"
   when: item.type == 'slave'
 
+- name: Fail if a forward zone can't forward
+  # BIND only forwards recursive queries, so on a host with recursion off a
+  # forward zone would silently do nothing.
+  ansible.builtin.assert:
+    that:
+      - item.forwarders is defined
+      - item.forward_policy | default('only') in ['first', 'only']
+      - bind_recursion_enabled
+    fail_msg: >-
+      Forward zone '{{ item.name }}' needs a forwarders list (an empty list exempts the domain from
+      forwarding), a forward_policy of 'first' or 'only' (got '{{ item.forward_policy | default('only') }}'),
+      and recursion on (bind_dns_role: recursive, or bind_recursion_enabled: true): named only forwards
+      recursive queries.
+  loop: "{{ bind_zones }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when: item.type == 'forward'
+
+- name: Fail if a forward zone relies on an empty forwarders list on BIND 9.11
+  # Tested: on 9.11 a subdomain with "forwarders { };" is still forwarded by
+  # its parent forward zone; 9.16+ resolves it normally as intended.
+  ansible.builtin.assert:
+    that:
+      - bind_dnssec_policy_supported
+    fail_msg: >-
+      Forward zone '{{ item.name }}' has an empty forwarders list to exempt it from forwarding, but
+      {{ ansible_facts['distribution'] }} {{ ansible_facts['distribution_major_version'] }} is running BIND 9.11,
+      which still forwards it through a parent forward zone. Set bind_use_bind9_16: true to move this host
+      to BIND 9.16, or remove the exemption.
+  loop: "{{ bind_zones }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when: item.type == 'forward' and item.forwarders is defined and item.forwarders | length == 0
+
 - name: Fail if a master zone requests dnssec without signing enabled
   ansible.builtin.assert:
     that:

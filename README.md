@@ -154,9 +154,9 @@ bind_dns64_clients_acl: [dns64_clients, 192.0.2.0/24, "!10.9.0.0/16"]
 
 ### Conditional forwarding
 
-A `type: forward` zone sends queries for one domain to specific servers,
-e.g. an Active Directory domain to its domain controllers, while
-everything else is resolved normally:
+A `type: forward` zone sends queries for a domain, and every name under
+it, to specific servers. For example, an Active Directory domain can go to
+its domain controllers while everything else is resolved normally:
 
 ```yaml
 bind_dns_role: recursive
@@ -167,6 +167,23 @@ bind_zones:
     forwarders: [10.20.1.10, 10.20.1.11]
 bind_dnssec_validate_except: [corp.internal]
 ```
+
+- **Subdomains:** `corp.internal` covers `dc01.corp.internal`,
+  `host.us.corp.internal`, `_ldap._tcp.dc._msdcs.corp.internal` and any
+  other name under it, at any depth. A more specific zone wins: a forward
+  zone `lab.corp.internal` can go to other servers, or to a forwarder on
+  another port (`"10.0.0.53 port 5353"`).
+- **Exemptions:** `forwarders: []` exempts a subdomain, and named then
+  resolves it normally. On BIND 9.11 (RHEL 8's base package), a subdomain
+  of a forward zone is still forwarded by its parent. The role refuses an
+  empty list there; set `bind_use_bind9_16: true` to use it.
+- **`forward_policy`:** with `only` (the default for forward zones), named
+  never resolves these names itself. If the forwarders don't answer,
+  clients get SERVFAIL. With `first`, named falls back to normal
+  resolution, which only helps when the domain is also public.
+- **Recursion:** forwarding needs recursion on. named only forwards
+  recursive queries, so the role refuses forward zones on a host without
+  it.
 
 A private domain like this is unsigned, and the public DNSSEC chain proves
 it doesn't exist. Without `bind_dnssec_validate_except`, named would

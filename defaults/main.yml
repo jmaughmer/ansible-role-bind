@@ -428,9 +428,12 @@ bind_notify_rate: ""         # BIND default 20 NOTIFY messages per second
 bind_rate_limit: {}
 
 # -----------------------------------------------------------------------------
-# Zones — authoritative hosts only. Each entry:
+# Zones. Each entry:
 #   name:                zone name (required)
-#   type:                master | slave | forward (required)
+#   type:                master | slave | forward (required). master/slave
+#                         are for authoritative hosts; forward is for
+#                         recursive ones (named only forwards recursive
+#                         queries)
 #   file:                zone data filename, default "<name>.zone"
 #   allow_transfer_acl:  overrides bind_allow_transfer_acl for this zone
 #   also_notify:         list of IPs, master zones only
@@ -440,7 +443,18 @@ bind_rate_limit: {}
 #                         bind_dnssec_enable_signing: true)
 #   dnssec_policy:        overrides bind_dnssec_policy for this zone
 #   zone_statistics:      overrides bind_zone_statistics for this zone
-#   forwarders/forward_policy: forward-zone only
+#   forwarders:           forward zones only: where to send queries for this
+#                          domain and every name under it. A list (or one
+#                          address as a string); an entry may name a port,
+#                          e.g. "10.0.0.53 port 5353". Covers every name
+#                          under the domain, at any depth, unless a more
+#                          specific zone says otherwise. An empty list
+#                          exempts the domain from forwarding, e.g. a
+#                          subdomain of a forward zone (BIND 9.16+: 9.11
+#                          still forwards it, so the role refuses it there).
+#   forward_policy:       forward zones only: only (default) never falls back
+#                          to normal resolution; first does if the forwarders
+#                          don't answer
 #   records:              optional list of {name, type, value, comment} to
 #                          render a brand-new master zone file from
 #                          templates/zone.db.j2; omit to manage the zone
