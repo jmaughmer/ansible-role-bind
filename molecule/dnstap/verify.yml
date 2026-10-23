@@ -27,6 +27,9 @@
         - dnstap.test MX
         - nope.dnstap.test A
         - +tcp www.dnstap.test AAAA
+        # without recursion desired, the way resolvers ask an authoritative server
+        - +norec mail.dnstap.test A
+        - +norec dnstap.test SOA
 
     - name: Run the converter now rather than waiting for its timer
       ansible.builtin.systemd:
@@ -50,6 +53,8 @@
                       | selectattr('dns.question.type', 'equalto', 'AAAA') | list }}"
         mx: "{{ responses | selectattr('dns.question.type', 'equalto', 'MX') | list }}"
         nope: "{{ responses | selectattr('dns.question.name', 'equalto', 'nope.dnstap.test') | list }}"
+        auth_responses: "{{ responses | selectattr('bind.dnstap.message_type', 'equalto', 'AUTH_RESPONSE') | list }}"
+        client_responses: "{{ responses | selectattr('bind.dnstap.message_type', 'equalto', 'CLIENT_RESPONSE') | list }}"
       ansible.builtin.assert:
         that:
           - www_a | map(attribute='dns.answers') | flatten | map(attribute='data') | list is contains('10.153.56.20')
@@ -61,7 +66,16 @@
           - queries | map(attribute='dns.question.name') | list is contains('www.dnstap.test')
           - queries | map(attribute='bind.dnstap.message_type') | unique | list == ['AUTH_QUERY']
           - queries | selectattr('dns.response_code', 'defined') | list | length == 0
-          - responses | map(attribute='bind.dnstap.message_type') | unique | list == ['CLIENT_RESPONSE']
+          - responses | map(attribute='bind.dnstap.message_type') | unique | sort == ['AUTH_RESPONSE', 'CLIENT_RESPONSE']
+          # the +norec queries: answered as AUTH_RESPONSE, with the zone that answered
+          - auth_responses | map(attribute='dns.question.name') | sort == ['dnstap.test', 'mail.dnstap.test']
+          - auth_responses | map(attribute='bind.dnstap.query_zone') | unique | list == ['dnstap.test']
+          - auth_responses | selectattr('dns.header_flags', 'contains', 'AA') | list | length == 2
+          - auth_responses | selectattr('dns.header_flags', 'contains', 'RD') | list | length == 0
+          - client_responses | rejectattr('dns.header_flags', 'contains', 'RD') | list | length == 0
+          # every message's size in bytes (a DNS header alone is 12)
+          - events | rejectattr('bind.dnstap.message_size', 'defined') | list | length == 0
+          - events | map(attribute='bind.dnstap.message_size') | min > 12
           # each answer's latency, from pairing it with its AUTH_QUERY
           - responses | rejectattr('event.duration', 'defined') | list | length == 0
           - queries | selectattr('event.duration', 'defined') | list | length == 0
@@ -208,6 +222,12 @@
           # the NXDOMAIN's query was logged after it, so it stays unpaired
           - nxdomain | length == 1 and nxdomain[0].event.duration is not defined
           - query_msgs | selectattr('event.duration', 'defined') | list | length == 0
+          # message sizes: www.example.com A is a 12-byte header, a 17-byte
+          # name and 4 bytes of type/class; the answers are the fixture's
+          # hand-built messages
+          - query_msgs[0].bind.dnstap.message_size == 33
+          - cname_chain.bind.dnstap.message_size == 112
+          - v6.bind.dnstap.message_size == 154
         fail_msg: "Unexpected converter output: {{ events | to_json }}"
 
     - name: Convert with a tiny output size to force rotation

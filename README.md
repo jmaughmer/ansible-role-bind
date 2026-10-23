@@ -612,13 +612,19 @@ answer/authority/additional sections, rcode and flags.
 
 ```yaml
 bind_dnstap_enabled: true
-bind_dnstap_types: [client response]   # the default; add "resolver response" on resolvers
+bind_dnstap_types: [auth response, client response]   # the default
 ```
 
-- `client response` (the default) captures every answer the server sends
-  its clients, on authoritative and recursive hosts alike. On recursive
-  hosts, add `resolver response` to also capture the answers named gets
-  back from upstream servers.
+- The default captures every answer the server sends. BIND splits answers
+  into two message types by whether the query asked for recursion (the RD
+  flag). An answer to a query that did is a `client response`; one that
+  didn't is an `auth response`. Other resolvers querying an authoritative
+  server don't set RD, so on authoritative hosts most answers are auth
+  responses. Capture both.
+- On recursive hosts, add `resolver query` and `resolver response` to also
+  capture named's own lookups to other servers. That includes the lookups
+  it sends to forwarders: BIND records those as resolver messages with RD
+  set, and never uses the forwarder message types.
 - **Answer latency** (`event.duration`) needs the queries captured too.
   BIND stamps each dnstap message with one time only: the query time on
   queries and the response time on responses. The export
@@ -626,10 +632,10 @@ bind_dnstap_types: [client response]   # the default; add "resolver response" on
   by pairing each response with its query. It matches on client address
   and port, transport, DNS ID and question. To enable it, add the query
   type that matches the host's role:
-  - authoritative: `[auth query, client response]`. named logs a query it
-    answers from its own zones (recursion off) as `auth query`, not
-    `client query`, so `client query` captures nothing on an
-    authoritative-only server.
+  - authoritative: `[auth query, auth response, client response]`. named
+    logs a query it answers from its own zones (recursion off) as
+    `auth query`, not `client query`, so `client query` captures nothing
+    on an authoritative-only server.
   - resolver: `[client query, client response]`.
 
   Capturing queries roughly doubles the dnstap volume. A query still
@@ -715,13 +721,17 @@ converter writes it, pretty-printed:
     "resolved_ip": ["192.0.2.1"]
   },
   "observer": {"vendor": "ISC", "product": "BIND", "type": "dns", "hostname": "ns1", "version": "9.16.23-RH"},
-  "bind": {"dnstap": {"message_type": "CLIENT_RESPONSE", "socket_protocol": "UDP"}}
+  "bind": {"dnstap": {"message_type": "CLIENT_RESPONSE", "socket_protocol": "UDP", "message_size": 93}}
 }
 ```
 
 `source`/`destination` mirror `client`/`server` and are left out above.
 Authority and additional records, which ECS has no fields for, go under
-`bind.dnstap.authorities` / `.additionals`.
+`bind.dnstap.authorities` / `.additionals`. `bind.dnstap.message_size` is
+the DNS message's size in bytes, as carried over UDP (TCP adds a 2-byte
+length prefix). `bind.dnstap.query_zone` is set on authoritative and
+upstream answers: it's the zone the answering server was asked as an
+authority for.
 
 `event.duration` (in nanoseconds) is present only on answers the converter
 could pair with their query. That requires capturing the queries as well;
@@ -930,11 +940,17 @@ credentials.
 Elasticsearch export on one authoritative server. `verify.yml` covers four
 things:
 
-1. **Live export.** It sends real queries through `named` (A, MX, NXDOMAIN,
-   and AAAA over TCP) and runs the export service. It then checks the
-   exported JSON field by field (including that every answer was paired
-   with its `auth query` and has a latency), that the file is owned by `named` with mode
-   0640, and that a second run doesn't export anything twice.
+1. **Live export.** It sends real queries through `named`: A, MX,
+   NXDOMAIN and AAAA over TCP, plus two without recursion desired, the way
+   resolvers query an authoritative server. It runs the export service,
+   then checks:
+   - the exported JSON, field by field;
+   - that the queries without RD came back as `AUTH_RESPONSE`, carrying
+     the answering zone;
+   - that every answer was paired with its `auth query` and has a latency;
+   - that every message has a size;
+   - that the file is owned by `named` with mode 0640;
+   - that a second run doesn't export anything twice.
 2. **Converter on the host's own Python** (platform-python 3.6 on EL8). It
    runs the converter on prepared dnstap files from
    [`make_test_dnstap.py`](molecule/dnstap/files/make_test_dnstap.py). These

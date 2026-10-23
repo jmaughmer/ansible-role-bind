@@ -315,16 +315,23 @@ bind_log_file_size: 100m     # size at which a per-category log rolls
 # eventually filling the disk.
 bind_dnstap_enabled: false
 # Message types to capture: (all|auth|client|forwarder|resolver), optionally
-# followed by query or response. "client response" = every answer this
-# server sends its clients, on authoritative and recursive hosts alike. Add
-# "resolver response" on recursive hosts to also capture the answers named
-# gets back from upstream servers. Capturing the queries too (roughly double
-# the volume) lets the Elasticsearch export pair each answer with its query
-# and record its latency (event.duration): add "auth query" on authoritative
-# hosts (named logs queries it answers from its own zones, recursion off, as
-# auth queries, so "client query" captures nothing there) or "client query"
-# on resolvers. A single type can also be given as a string, e.g. "all".
+# followed by query or response. The default captures every answer this
+# server sends: BIND logs an answer to a query that asked for recursion
+# (RD) as a "client response" and one that didn't as an "auth response" —
+# which is how other resolvers query an authoritative server, so on
+# authoritative hosts most answers are auth responses.
+#   - "resolver query" + "resolver response" on recursive hosts capture
+#     named's own lookups to authorities and forwarders (BIND logs forwarded
+#     lookups as resolver messages too; it never uses the forwarder types).
+#   - Capturing the queries too (roughly double the volume) lets the
+#     Elasticsearch export pair each answer with its query and record its
+#     latency (event.duration): add "auth query" on authoritative hosts
+#     (named logs queries it answers from its own zones, recursion off, as
+#     auth queries, so "client query" captures nothing there) or "client
+#     query" on resolvers.
+# A single type can also be given as a string, e.g. "all".
 bind_dnstap_types:
+  - auth response
   - client response
 # Written into bind_log_dir, so the chroot bind mount and the named_log_t
 # SELinux label already cover it. Deliberately not "*.log": it's binary,

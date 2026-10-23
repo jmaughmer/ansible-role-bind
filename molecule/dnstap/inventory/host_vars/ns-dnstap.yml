@@ -10,9 +10,12 @@ bind_acls:
   dns64_clients: []
 bind_dnstap_enabled: true
 # Recursion is off, so named logs the incoming queries as AUTH_QUERY; a
-# "client query" type would capture nothing here.
+# "client query" type would capture nothing here. Answers to queries
+# without recursion desired (how resolvers ask) are AUTH_RESPONSE, the
+# rest CLIENT_RESPONSE.
 bind_dnstap_types:
   - auth query
+  - auth response
   - client response
 bind_dnstap_export_enabled: true
 bind_zones:

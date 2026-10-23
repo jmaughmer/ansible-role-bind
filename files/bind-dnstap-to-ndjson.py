@@ -457,6 +457,9 @@ def build_event(frame):
             pass
 
     if wire is not None:
+        # Bytes of the DNS message itself (what UDP carries; TCP adds a
+        # 2-byte length): for amplification, truncation and tunnelling.
+        bind["message_size"] = len(wire)
         parsed = parse_dns(bytes(wire))
         if "id" in parsed:
             dns["id"] = parsed["id"]
