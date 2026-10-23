@@ -265,8 +265,11 @@ bind_log_consolidated_versions: "{{ bind_log_file_versions }}"
 # queries.log out of the shipper's paths instead.
 bind_log_consolidated_exclude: []
 
-# Matches the 17 categories elastic-bind's grok/simulate data
-# covers. Add/remove categories here; both logging layouts iterate this list.
+# The 17 categories elastic-bind's grok/simulate data covers, plus
+# query-errors (failed queries, e.g. "query failed (SERVFAIL) for ..."),
+# which would otherwise land in the default category's file. Add/remove
+# categories here; both logging layouts iterate this list. A category left
+# out is logged wherever the default category goes.
 bind_log_categories:
   - default
   - general
@@ -285,6 +288,7 @@ bind_log_categories:
   - dispatch
   - dnssec
   - lame-servers
+  - query-errors
 
 bind_log_severity: info      # severity per channel; "dynamic" tracks named -d level
 # 9.11-safe legacy format ("14-Aug-2026 10:23:45.678", no UTC offset) so the

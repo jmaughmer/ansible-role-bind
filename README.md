@@ -539,8 +539,11 @@ By default the role writes one file per category:
 
 There's already an ingest pipeline for BIND logs in the companion
 repository [`elastic-bind`](https://github.com/jmaughmer/elastic-bind), built
-against a **single** consolidated log file with the same 17 categories this
-role defaults `bind_log_categories` to. Two variables pick the layout, and
+against a **single** consolidated log file with 17 of the 18 categories
+this role defaults `bind_log_categories` to. The 18th is `query-errors`:
+failed queries such as `query failed (SERVFAIL) for www.example.com/IN/A`,
+in `query-errors.log`. The pipeline indexes those lines too, with the
+client and `event.outcome: failure`. Two variables pick the layout, and
 both can be on at once:
 
 | `bind_log_consolidated` | `bind_log_individual_files` | Files written |

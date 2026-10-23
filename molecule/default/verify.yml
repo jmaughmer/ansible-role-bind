@@ -31,6 +31,13 @@
         fail_msg: "Expected BIND {{ expected }} on {{ inventory_hostname }}, got: {{ named_version.stdout }}"
       when: ansible_facts['distribution_major_version'] | int == 8
 
+    # named opens every channel's file when it loads the config.
+    - name: Check failed queries have their own log file
+      ansible.builtin.stat:
+        path: /var/log/named/query-errors.log
+      register: query_errors_log
+      failed_when: not query_errors_log.stat.exists
+
     - name: Read the system crypto policy's BIND back end
       ansible.builtin.slurp:
         src: /etc/crypto-policies/back-ends/bind.config
