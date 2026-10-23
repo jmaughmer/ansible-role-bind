@@ -684,7 +684,7 @@ Each line already uses Elastic Common Schema field names, and Elastic
 Agent decodes it with its `ndjson` parser — see
 [`examples/elastic-agent-dnstap.yml`](examples/elastic-agent-dnstap.yml)
 (dataset `bind.dnstap`, path `/var/log/named/dnstap.ndjson*`). That config
-also routes events through `bind-dnstap-pipeline` from
+also routes events through `logs-bind.dnstap@custom` from
 [`elastic-bind`](https://github.com/jmaughmer/elastic-bind), which
 adds registered domain/subdomain/TLD, `event.outcome`, `event.action` and
 `related.ip`, alongside a component template with the field mappings; load

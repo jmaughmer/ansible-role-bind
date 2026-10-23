@@ -14,15 +14,15 @@
 # bind-dnstap-to-ndjson already writes ECS field names (dns.question.*,
 # dns.answers[], dns.response_code, client.ip, ...) and an absolute UTC
 # @timestamp, so unlike the text logs there's no event.timezone to set.
-# elastic-bind's bind-dnstap-pipeline adds registered
+# elastic-bind's logs-bind.dnstap@custom ingest pipeline adds registered
 # domain/subdomain/TLD, event.outcome, event.action and related.ip on top,
-# and its logs-bind.dnstap@custom template maps the fields (ip, long, ...)
-# — load both with that repo's setup.sh first. Without them, drop the
+# and its component template of the same name maps the fields (ip, long,
+# ...) — load both with that repo's setup.sh first. Without them, drop the
 # pipeline line: the events still index, just without those extras and
 # with Elasticsearch's default mappings.
 # (elastic-bind/elastic-agent-dnstap.yml is the same config.)
 
-pipeline: bind-dnstap-pipeline
+pipeline: logs-bind.dnstap@custom
 parsers:
   - ndjson:
       target: ""
