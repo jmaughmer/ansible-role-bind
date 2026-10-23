@@ -46,6 +46,7 @@ forwarders) applies to both and is controlled independently.
 |---|---|
 | Master/slave/recursive role | `bind_dns_role`, `bind_zones` |
 | DNSSEC validation + signing | `bind_dnssec_validation`, `bind_dnssec_enable_signing`, `bind_dnssec_policy` |
+| System crypto policy (disabled DNSSEC algorithms) | `bind_crypto_policy_enabled`, `bind_crypto_policy_file` |
 | DNSSEC KSK/ZSK key policy | `bind_dnssec_policies` (algorithm, lifetime/rollover, key size per role) |
 | DNSSEC key status + DS record retrieval | `bind_dnssec_manage_keys`, `bind_dnssec_ds_output_dir` |
 | Zone transfer ACLs | `bind_acls`, `bind_allow_transfer_acl`, per-zone `allow_transfer_acl` |
@@ -379,6 +380,36 @@ rest of this role doesn't need to know or care which flavor is installed.
 
 On RHEL 9+, `bind_use_bind9_16` is asserted off — the base `bind` package is
 already 9.16+ there, so the AppStream package doesn't exist and isn't needed.
+
+## System crypto policy
+
+RHEL sets which cryptographic algorithms are acceptable system-wide with
+`update-crypto-policies` (DEFAULT, FUTURE, FIPS, …). Its BIND back end,
+`/etc/crypto-policies/back-ends/bind.config`, lists the DNSSEC algorithms
+and DS digest types the policy forbids, as `disable-algorithms` and
+`disable-ds-digests` statements. RHEL's stock `named.conf` includes it
+inside `options`, and so does this role (`bind_crypto_policy_enabled:
+true`, the default), so named follows the same policy as the rest of the
+system.
+
+What that disables under the DEFAULT policy:
+
+| Release | Disabled algorithms | Disabled DS digests |
+|---|---|---|
+| RHEL 8 | RSAMD5, DSA, NSEC3DSA, ECCGOST | GOST |
+| RHEL 9, 10 | RSAMD5, RSASHA1, NSEC3RSASHA1, DSA, NSEC3DSA, ECCGOST | SHA-1, GOST |
+
+named treats a zone signed only with a disabled algorithm as insecure
+(unsigned): it still answers, just without validating it. The role
+includes the file only if it exists on the host, so hosts without
+crypto-policies still work. In a chroot it needs nothing extra, because
+RHEL's `/etc/named-chroot.files` already lists it. Set
+`bind_crypto_policy_enabled: false` to leave it out, or point
+`bind_crypto_policy_file` at another file of the same statements.
+
+After changing the system policy (`update-crypto-policies --set FUTURE`),
+reload named (`rndc reconfig` or `systemctl reload named`). The role only
+notices on its next run if something else in the config changed.
 
 ## DNSSEC key management (KSK/ZSK)
 

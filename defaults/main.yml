@@ -160,6 +160,16 @@ bind_dnssec_validation: auto   # auto | yes | no  (validate signatures on lookup
 # treated as forged and comes back SERVFAIL. Renders validate-except, which
 # needs BIND 9.13.3+: RHEL 9+, or RHEL 8 with bind_use_bind9_16: true.
 bind_dnssec_validate_except: []
+# System-wide crypto policy (update-crypto-policies: DEFAULT, FUTURE, FIPS,
+# ...). Its BIND back end lists the DNSSEC algorithms and DS digests the
+# policy forbids (disable-algorithms / disable-ds-digests), and RHEL's own
+# named.conf includes it inside options. On RHEL 9+ DEFAULT that disables
+# RSASHA1 and NSEC3RSASHA1 signatures and SHA-1 DS records, so zones signed
+# only with those validate as insecure (unsigned) rather than secure. The
+# role includes the file only if it exists on the host; it's already in
+# RHEL's chroot file list. After changing the policy, reload named.
+bind_crypto_policy_enabled: true
+bind_crypto_policy_file: /etc/crypto-policies/back-ends/bind.config
 # Automatic signing of locally-hosted master zones via BIND's built-in
 # dnssec-policy + inline-signing. Requires BIND 9.16+: on RHEL 9+ that's
 # already the base 'bind' package; on RHEL 8 this role automatically pulls

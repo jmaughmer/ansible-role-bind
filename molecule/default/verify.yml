@@ -31,6 +31,26 @@
         fail_msg: "Expected BIND {{ expected }} on {{ inventory_hostname }}, got: {{ named_version.stdout }}"
       when: ansible_facts['distribution_major_version'] | int == 8
 
+    - name: Read the system crypto policy's BIND back end
+      ansible.builtin.slurp:
+        src: /etc/crypto-policies/back-ends/bind.config
+      register: crypto_policy
+
+    - name: Read named's effective configuration
+      ansible.builtin.command: named-checkconf -p
+      register: effective_conf
+      changed_when: false
+
+    - name: Check named applies every algorithm and digest the policy disables
+      vars:
+        disabled: "{{ (crypto_policy.content | b64decode) | regex_findall('^\\s*([A-Z0-9-]+);', multiline=True) }}"
+      ansible.builtin.assert:
+        that:
+          - disabled | length > 0
+          - "'disable-algorithms \".\"' in effective_conf.stdout"
+          - disabled | reject('in', effective_conf.stdout) | list | length == 0
+        fail_msg: "Policy disables {{ disabled }}; effective config: {{ effective_conf.stdout_lines | select('search', 'disable|^\\s+[A-Z0-9-]+;$') | list }}"
+
 - name: Verify the primary
   hosts: ns-master
   become: true

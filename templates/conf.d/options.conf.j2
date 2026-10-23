@@ -59,6 +59,11 @@ options {
 {% if bind_dnssec_validate_except | length > 0 %}
     validate-except { {% for domain in bind_dnssec_validate_except %}"{{ domain }}"; {% endfor %}};
 {% endif %}
+{% if bind_crypto_policy_enabled and (bind_crypto_policy_stat.stat.exists | default(false)) %}
+
+    // System-wide crypto policy: DNSSEC algorithms and DS digests it disables.
+    include "{{ bind_crypto_policy_file }}";
+{% endif %}
 
     zone-statistics {{ 'yes' if bind_zone_statistics else 'no' }};
 

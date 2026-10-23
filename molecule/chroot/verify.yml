@@ -108,6 +108,18 @@
       ansible.builtin.command: grep -F 'named.log" versions 4 size 50m;' /etc/named/conf.d/logging.conf
       changed_when: false
 
+    # The include points at a symlink into /usr/share/crypto-policies; RHEL's
+    # named-chroot.files mounts it into the chroot.
+    - name: Check the chrooted named reads the system crypto policy
+      ansible.builtin.shell: >-
+        set -o pipefail;
+        named-checkconf -t /var/named/chroot -p | grep -A3 'disable-algorithms "\."'
+      args:
+        executable: /bin/bash
+      register: chroot_policy
+      changed_when: false
+      failed_when: chroot_policy.rc != 0 or 'RSAMD5' not in chroot_policy.stdout
+
     - name: Check dnstap writes through the bind-mounted log directory
       ansible.builtin.stat:
         path: /var/log/named/dnstap.tap

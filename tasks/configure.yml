@@ -28,6 +28,12 @@
   when: bind_dnssec_policies | length == 0
   notify: reload named
 
+- name: Check for the system crypto policy's BIND back end
+  ansible.builtin.stat:
+    path: "{{ bind_crypto_policy_file }}"
+  register: bind_crypto_policy_stat
+  when: bind_crypto_policy_enabled
+
 - name: Template options
   ansible.builtin.template:
     src: conf.d/options.conf.j2
