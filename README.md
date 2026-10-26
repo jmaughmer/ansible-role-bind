@@ -97,6 +97,15 @@ bind_zones:
     allow_transfer_acl: transfer_hosts
     also_notify: [10.0.1.11]
     dnssec: true                # only with bind_dnssec_enable_signing: true, BIND 9.16+
+    # Optional: let the role write the zone file (see Zone content, below)
+    primary_ns: ns1.example.com
+    nameservers: [ns1.example.com, ns2.example.com]
+    records:
+      - { comment: "Name servers" }   # comment only: a heading for the records below it
+      - { name: ns1, type: A, value: 10.0.1.10 }
+      - { name: ns2, type: A, value: 10.0.1.11 }
+      - { comment: "Web" }
+      - { name: www, type: A, value: 10.0.1.20, comment: "see CHG1234" }   # trailing comment
 ```
 
 ### Slave
@@ -555,8 +564,10 @@ bind_zones:
     primary_ns: ns1.example.com
     nameservers: [ns1.example.com, ns2.example.com]
     records:
+      - { comment: "10.0.1.10-19: name servers" }   # heading lines label address ranges
       - { name: "10", type: PTR, value: "ns1.example.com." }
       - { name: "11", type: PTR, value: "ns2.example.com." }
+      - { comment: "10.0.1.20-49: web" }
       - { name: "20", type: PTR, value: "www.example.com." }
 
 # Slave — pulls the zone above via AXFR/IXFR, same as any forward zone
