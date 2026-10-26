@@ -27,8 +27,12 @@ bind_zones:
     primary_ns: ns1.example.test
     nameservers: [ns1.example.test, ns2.example.test]
     records:
+      - { comment: "Name servers" }        # comment-only entries: headings in the zone file
       - { name: ns1, type: A, value: 10.153.53.10 }
       - { name: ns2, type: A, value: 10.153.53.11 }
+      - comment: |
+          Web and mail.
+          verify.yml checks these still resolve below the headings.
       - { name: www, type: A, value: 10.153.53.20, comment: "web server" }
       - { name: mail, type: A, value: 10.153.53.25 }
       - { name: "@", type: MX, value: "10 mail.example.test." }

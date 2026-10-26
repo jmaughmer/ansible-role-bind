@@ -463,7 +463,13 @@ bind_rate_limit: {}
 #                          file out of band (default). comment is optional
 #                          free text, rendered as a trailing "; <comment>"
 #                          on that record's line for documentation purposes
-#                          only — it has no effect on the record itself.
+#                          only — it has no effect on the record itself. An
+#                          entry with only a comment renders a "; <comment>"
+#                          line of its own (after a blank line; one ";" per
+#                          line of a multi-line comment), as a heading for
+#                          the records after it:
+#                            - { comment: "Mail servers" }
+#                            - { name: mx1, type: A, value: 10.0.1.25 }
 #   primary_ns/nameservers: required when records is set — the SOA MNAME
 #                          and the apex NS list, both host names without a
 #                          trailing dot

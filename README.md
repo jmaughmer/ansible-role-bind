@@ -212,6 +212,34 @@ Two ways to manage a master zone's data:
    validated with `named-checkzone` before it's put in place. Each record
    may include an optional `comment` — rendered as a trailing `; <comment>`
    on that record's line, for documentation only, no effect on the record.
+   An entry with *only* a `comment` adds a comment line of its own, after a
+   blank line, as a heading for the group of records that follows it:
+
+   ```yaml
+   records:
+     - { comment: "Mail servers (see CHG1234)" }
+     - { name: mx1, type: A, value: 10.0.1.25 }
+     - { name: mx2, type: A, value: 10.0.1.26 }
+     - comment: |
+         Web front ends.
+         Behind the load balancer; don't point these anywhere else.
+     - { name: www, type: A, value: 10.0.1.20 }
+   ```
+
+   renders as
+
+   ```
+   ; Mail servers (see CHG1234)
+   mx1    IN  A   10.0.1.25
+   mx2    IN  A   10.0.1.26
+
+   ; Web front ends.
+   ; Behind the load balancer; don't point these anywhere else.
+   www    IN  A   10.0.1.20
+   ```
+
+   Comments are part of the zone file, so adding or changing one counts
+   as a content change. That bumps the serial like any other edit.
    Leave `serial` unset and the role manages the SOA serial: it keeps the
    serial already on disk while the zone's content is unchanged, so
    re-running the play changes nothing, and bumps it — to the larger of

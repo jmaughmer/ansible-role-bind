@@ -11,8 +11,17 @@ $TTL {{ zone.ttl | default(86400) }}
 {% for ns in zone.nameservers %}
     IN  NS  {{ ns }}.
 {% endfor %}
-{# The comment is an expression, not an {% if %} block: a block tag at the end
-   of the line would have trim_blocks eat the newline and run records together. #}
+{# The trailing comment is an expression, not an {% if %} block: a block tag
+   at the end of the line would have trim_blocks eat the newline and run
+   records together. An entry with only a comment is a heading for the
+   records after it: a blank line, then each line of the text as "; ...". #}
 {% for rec in zone.records %}
+{% if rec.name is defined or rec.type is defined or rec.value is defined %}
 {{ rec.name }}    IN  {{ rec.type }}   {{ rec.value }}{{ ('  ; ' ~ rec.comment) if rec.comment is defined else '' }}
+{% else %}
+
+{% for line in (rec.comment | string).splitlines() %}
+; {{ line }}
+{% endfor %}
+{% endif %}
 {% endfor %}

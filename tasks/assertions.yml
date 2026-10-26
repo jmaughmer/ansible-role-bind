@@ -201,6 +201,21 @@
     label: "{{ item.name }}"
   when: item.type == 'slave'
 
+- name: Fail if a zone record is neither a full record nor a comment line
+  ansible.builtin.assert:
+    that:
+      - >-
+        (item.1.name is defined and item.1.type is defined and item.1.value is defined)
+        or (item.1.comment is defined and item.1.name is not defined
+            and item.1.type is not defined and item.1.value is not defined)
+    fail_msg: >-
+      Zone '{{ item.0.name }}' has a records entry that's incomplete: {{ item.1 | to_json }}. Give a record
+      name, type and value (plus an optional trailing comment), or only a comment to add a comment line
+      above the records after it.
+  loop: "{{ bind_zones | selectattr('records', 'defined') | subelements('records') }}"
+  loop_control:
+    label: "{{ item.0.name }}: {{ item.1.name | default('(comment)') }}"
+
 - name: Fail if a forward zone can't forward
   # BIND only forwards recursive queries, so on a host with recursion off a
   # forward zone would silently do nothing.

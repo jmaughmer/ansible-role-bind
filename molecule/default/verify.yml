@@ -86,6 +86,21 @@
       loop_control:
         label: "{{ item.name }} {{ item.type }}"
 
+    - name: Read the rendered example.test zone file
+      ansible.builtin.slurp:
+        src: /var/named/zones/example.test.zone
+      register: example_zone
+
+    - name: Check comment-only records became heading lines
+      vars:
+        zone_lines: "{{ (example_zone.content | b64decode).splitlines() }}"
+      ansible.builtin.assert:
+        that:
+          - "'; Name servers' in zone_lines"
+          - "'; Web and mail.' in zone_lines"
+          - "'; verify.yml checks these still resolve below the headings.' in zone_lines"
+        fail_msg: "{{ zone_lines }}"
+
     - name: Wait for example.test to be signed
       ansible.builtin.command: dig +dnssec +norec @127.0.0.1 example.test SOA
       register: signed_soa
