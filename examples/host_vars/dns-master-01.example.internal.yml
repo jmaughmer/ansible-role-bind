@@ -67,10 +67,18 @@ bind_zones:
     nameservers:
       - ns1.example.com
       - ns2.example.com
+    # An entry with only a comment becomes a heading line in the zone file
+    # ("; Name servers", after a blank line) for the records below it; a
+    # comment on a record is a trailing "; ..." on that record's line.
     records:
+      - { comment: "Name servers" }
       - { name: ns1, type: A, value: 10.0.1.10 }
       - { name: ns2, type: A, value: 10.0.1.11 }
+      - comment: |
+          Web: public website, behind the load balancer.
+          Change only with a ticket.
       - { name: www, type: A, value: 10.0.1.20, comment: "public website — see CHG1234" }
+      - { comment: "Mail" }
       - { name: "@", type: MX, value: "10 mail.example.com.", comment: "Google Workspace" }
 
   # Reverse zone for the 10.0.1.0/24 the records above live in. Same
@@ -87,6 +95,8 @@ bind_zones:
       - ns1.example.com
       - ns2.example.com
     records:
+      - { comment: "10.0.1.10-19: name servers" }
       - { name: "10", type: PTR, value: "ns1.example.com." }
       - { name: "11", type: PTR, value: "ns2.example.com." }
+      - { comment: "10.0.1.20-49: web" }
       - { name: "20", type: PTR, value: "www.example.com." }
