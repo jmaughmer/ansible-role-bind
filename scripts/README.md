@@ -5,7 +5,11 @@ the [`bind_dns`](../README.md) Ansible role, meant to be run in this order:
 
 1. **`named_conf_to_zones.py`** — reads `named.conf` (following its own
    `include "...";` statements) and produces the `<zone> <file>` list
-   (`zones.txt`) the other two scripts consume.
+   (`zones.txt`) the other two scripts consume. With `--bind-zones` it
+   writes the `bind_zones` YAML itself instead. That's the whole migration
+   for a **slave or edge server**: its zones are `named.conf` settings, and
+   their data comes from the master. See
+   [Migrating a slave or edge server](#migrating-a-slave-or-edge-server---bind-zones).
 2. **`check_ptr_records.py`** — sanity-checks forward (`A`/`AAAA`) and
    reverse (`PTR`) DNS across all your zones *before* anything gets
    migrated, so existing inconsistencies are caught while they're still
@@ -98,13 +102,85 @@ out what it needs from zone content, not from the zone's name.
 
 Full flag reference for any of the three: `--help`.
 
+### Migrating a slave or edge server (`--bind-zones`)
+
+A slave's zone data comes from its master by zone transfer, so there are
+no zone files to convert and `check_ptr_records.py`/`zone_to_bind_vars.py`
+aren't needed. Run only this, on the server being migrated:
+
+```bash
+# one file, paste-ready as (or merged into) host_vars
+./named_conf_to_zones.py /etc/named.conf --bind-zones -o bind_zones.yml
+
+# hundreds of zones: one file per zone, for the role's bind_zones_vars_dir
+./named_conf_to_zones.py /etc/named.conf --bind-zones \
+  --split-output host_vars/dns-edge-01.example.internal/zones.d
+```
+
+What it carries over, per zone:
+
+| `named.conf` | `bind_zones` entry |
+|---|---|
+| `type slave` / `secondary` | `type: slave` |
+| `masters { ... }` / `primaries { ... }` | `masters:` list. References to named `masters`/`primaries` lists are expanded, and a block-level `port N` is applied to each entry. Per-entry `port` and `key` are kept as written. |
+| `type forward` + `forwarders { ... }` | `type: forward`, `forwarders:` |
+| `forward first|only` | `forward_policy:`. A forward zone without one gets `first`, which is BIND's default and not the role's (`only`). |
+| `type master` / `primary` + `file "..."` | `type: master`, `file:` (the file name). A comment says to copy the zone file into the role's `bind_zones_dir`, or to convert it with `zone_to_bind_vars.py`. |
+| `allow-transfer { ... }` | `allow_transfer_acl:` |
+| `also-notify { ... }`, `notify yes|no` | `also_notify:`, `notify:` (master and slave zones) |
+| `zone-statistics yes|no` | `zone_statistics:` |
+
+How the transfer settings carry over:
+
+- **The zone's own `allow-transfer` wins;** without one, the global
+  `options { allow-transfer }` applies. If neither is set, BIND allowed
+  transfers to anyone, so the zone gets `allow_transfer_acl: any` with a
+  comment saying to tighten it.
+- **One ACL per zone:** the role's `allow_transfer_acl` takes one ACL name
+  (or `any`/`none`). A single-element list is used as-is. A longer list
+  becomes a generated ACL, `xfer_1`, `xfer_2` and so on, with identical
+  lists sharing one ACL.
+- **Referenced ACLs come along:** every `named.conf` ACL the zones
+  reference, including ACLs nested in other ACLs, is written as
+  `bind_acls`, together with the generated ones. Merge them with the
+  role's own `trusted`/`transfer_hosts`/`recursion_clients`/`dns64_clients`
+  entries. With `--split-output` they go to `DIR/bind_acls.yml.txt`. It's
+  `.txt` so `bind_zones_vars_dir`, which reads every `.yml` file as zone
+  data, ignores it.
+
+What it doesn't carry over, and says so:
+
+- **Other zone options** (`allow-update`, `max-refresh-time`,
+  `notify-source`, `notify explicit`, ...) are listed in a `# not
+  migrated:` comment above the zone. The role has no setting for them.
+- **TSIG keys:** a `key name` in masters or `allow-transfer` is kept, but
+  the role doesn't define TSIG keys. The script warns. Add the `key { };`
+  statements on the new servers yourself, or named won't load the config.
+- **Views:** a zone inside a `view { }` gets a comment. The role has no
+  views, and only the first definition of a zone name is used.
+- **Zone types the role doesn't model** (`hint`, `stub`, `static-stub`,
+  `redirect`, ...) are skipped with a warning.
+- **RHEL's stock zones** (`localhost`, `1.0.0.127.in-addr.arpa` and the
+  other `named.rfc1912.zones` entries) are skipped, since every RHEL server
+  already has them. `--include-stock-zones` keeps them.
+- **Forward zones on a server with recursion off** never forwarded
+  anything there, and get a comment saying so. The role only accepts
+  forward zones on hosts with recursion on.
+
+The output is plain YAML with every zone name quoted, so names like `on`
+or `0.10.in-addr.arpa` stay strings. It needs no Python packages beyond
+the standard library. Review the comments before using it.
+
 ---
 
 ## named_conf_to_zones.py
 
 Reads `named.conf` and prints a `<zone name> <file path>` line for every
 `zone { }` statement whose `type` is `master` or `slave` (configurable via
-`--zone-types`) and that has a `file "...";`. Zone names are picked up
+`--zone-types`; `primary`/`secondary` count as the same) and that has a
+`file "...";`. With `--bind-zones` it writes the role's `bind_zones` YAML
+instead: see
+[Migrating a slave or edge server](#migrating-a-slave-or-edge-server---bind-zones). Zone names are picked up
 whether or not they're quoted — `zone example.com { ... };` is as valid to
 BIND as `zone "example.com" { ... };`. `forward`/`hint`/`stub`/
 `redirect` zones are skipped — they don't have a meaningful zone data file
@@ -293,8 +369,9 @@ they actually differ.
 
 Every zone comes out as `type: master`. If the zone you're migrating is
 actually a **slave** in the new setup, you don't need this script for it at
-all — a `type: slave` entry needs no `records:`, just `masters:` (see the
-main README's **Slave** example).
+all: a `type: slave` entry needs no `records:`, just `masters:`.
+`named_conf_to_zones.py --bind-zones` writes those entries straight from
+the slave's `named.conf`.
 
 ### DNSSEC key migration
 
@@ -348,16 +425,15 @@ result: `named_conf_to_zones.py` writes `named.conf.expanded` (every
 
 ## Known limitations
 
-- **`named_conf_to_zones.py` reads `named.conf`, but only for `zone`/
-  `type`/`file`/`include`/`options { directory }`** — it doesn't resolve
-  ACL names or read `allow-transfer`/`also-notify` out of a zone's clause,
-  so `zone_to_bind_vars.py` still needs its own `--transfer-acl`/
-  `--also-notify` flags (uniform per run) rather than having those derived
-  automatically, and it has no opinion on `type: master`/`slave` beyond
-  always emitting `master` regardless of what `named.conf` said (see
-  **Output** above) — a zone that's `type slave` on the source server, if
-  it's staying a slave in the new setup, doesn't need `zone_to_bind_vars.py`
-  run against it at all.
+- **`zones.txt` carries only zone names and files.** In its default mode,
+  `named_conf_to_zones.py` doesn't pass `allow-transfer`/`also-notify` on
+  to `zone_to_bind_vars.py`, which still takes its own `--transfer-acl`/
+  `--also-notify` flags (uniform per run) and always emits `type: master`
+  (see **Output** above). `--bind-zones` does read those settings, and
+  writes complete entries, but its master entries carry no `records:`.
+  For a master that should keep its records in YAML, use
+  `zone_to_bind_vars.py` for the data and take the transfer settings from
+  the `--bind-zones` output.
 - **One default TTL per zone** (`zone_to_bind_vars.py`) — a source record's
   own TTL, if it differs from the zone default, survives only as an
   advisory `comment:`, not an actual per-record override (the role's

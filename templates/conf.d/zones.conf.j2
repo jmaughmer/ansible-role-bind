@@ -1,10 +1,7 @@
 // {{ ansible_managed }}
-{% for zone in bind_zones %}
-zone "{{ zone.name }}" {
-    type {{ zone.type }};
-{% if zone.type == 'master' %}
-    file "{{ bind_zones_dir }}/{{ zone.file | default(zone.name + '.zone') }}";
-    allow-transfer { {{ zone.allow_transfer_acl | default(bind_allow_transfer_acl) }}; };
+{# NOTIFY settings: masters notify their secondaries, and a secondary can
+   notify further secondaries of its own (edge chains). #}
+{% macro notify_settings(zone) %}
 {% if zone.notify is defined %}
     notify {{ 'yes' if zone.notify else 'no' }};
 {% endif %}
@@ -15,7 +12,14 @@ zone "{{ zone.name }}" {
 {% endfor %}
     };
 {% endif %}
-{% if bind_dnssec_enable_signing and (zone.dnssec | default(false)) %}
+{% endmacro %}
+{% for zone in bind_zones %}
+zone "{{ zone.name }}" {
+    type {{ zone.type }};
+{% if zone.type == 'master' %}
+    file "{{ bind_zones_dir }}/{{ zone.file | default(zone.name + '.zone') }}";
+    allow-transfer { {{ zone.allow_transfer_acl | default(bind_allow_transfer_acl) }}; };
+{{ notify_settings(zone) }}{% if bind_dnssec_enable_signing and (zone.dnssec | default(false)) %}
     dnssec-policy {{ zone.dnssec_policy | default(bind_dnssec_policy) }};
     inline-signing yes;
     key-directory "{{ bind_dnssec_keys_dir }}";
@@ -31,7 +35,7 @@ zone "{{ zone.name }}" {
 {% endfor %}
     };
     allow-transfer { {{ zone.allow_transfer_acl | default('none') }}; };
-{% elif zone.type == 'forward' %}
+{{ notify_settings(zone) }}{% elif zone.type == 'forward' %}
     forward {{ zone.forward_policy | default('only') }};
     forwarders {
 {% for ip in ([zone.forwarders] if zone.forwarders is string else zone.forwarders) %}

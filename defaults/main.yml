@@ -436,8 +436,10 @@ bind_rate_limit: {}
 #                         queries)
 #   file:                zone data filename, default "<name>.zone"
 #   allow_transfer_acl:  overrides bind_allow_transfer_acl for this zone
-#   also_notify:         list of IPs, master zones only
-#   notify:              yes|no, overrides bind_notify for this zone
+#   also_notify:         list of IPs to NOTIFY as well, master and slave zones
+#                         (a slave can notify secondaries of its own)
+#   notify:              yes|no, overrides bind_notify for this zone (master
+#                         and slave zones)
 #   masters:             list of master IPs, slave zones only
 #   dnssec:              bool, sign this zone (master only, requires
 #                         bind_dnssec_enable_signing: true)

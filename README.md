@@ -267,10 +267,21 @@ Three scripts in [`scripts/`](scripts/), meant to be run in this order,
 help move an existing hand-run BIND 9.11 deployment onto this role:
 
 - [`scripts/named_conf_to_zones.py`](scripts/named_conf_to_zones.py) reads
-  `named.conf` itself — following its own `include` statements, and
-  correctly handling zone stanzas with each directive on its own line in
-  any order, which a naive line-window grep/awk approach silently drops —
-  and produces the `<zone> <file>` list the other two scripts consume.
+  `named.conf` itself. It follows `include` statements and handles zone
+  stanzas with each directive on its own line in any order, which a naive
+  line-window grep/awk approach silently drops. By default it produces the
+  `<zone> <file>` list the other two scripts consume.
+
+  **For a slave or edge server, that's the whole migration:** with
+  `--bind-zones`, it writes the `bind_zones` YAML directly. Slave zones
+  come out with their masters, forward zones with their forwarders and
+  policy, along with each zone's transfer and notify settings and the
+  `bind_acls` they reference. A slave zone's data comes from its master,
+  so there are no zone files to convert:
+
+  ```bash
+  ./named_conf_to_zones.py /etc/named.conf --bind-zones -o host_vars/dns-edge-01/bind_zones.yml
+  ```
 - [`scripts/check_ptr_records.py`](scripts/check_ptr_records.py) — cross-checks
   `A`/`AAAA` records against `PTR` records across all your forward and
   reverse zones, so existing forward/reverse DNS mismatches get caught
