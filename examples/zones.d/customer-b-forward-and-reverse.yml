@@ -23,4 +23,5 @@
     - ns1.example.com
     - ns2.example.com
   records:
+    - { comment: "10.0.5.10-19: web" }   # a heading line labelling the range
     - { name: "10", type: PTR, value: "www.customer-b.example." }

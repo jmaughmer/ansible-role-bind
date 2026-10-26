@@ -10,5 +10,10 @@ nameservers:
   - ns1.example.com
   - ns2.example.com
 records:
+  # Comment-only entries become heading lines in the zone file.
+  - { comment: "Web" }
   - { name: www, type: A, value: 10.0.4.10 }
+  - comment: |
+      Mail: customer-hosted, managed by their IT.
+      Contact noc@customer-a.example before changing.
   - { name: mail, type: A, value: 10.0.4.11 }
