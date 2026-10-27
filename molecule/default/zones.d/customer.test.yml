@@ -5,4 +5,5 @@ type: master
 primary_ns: ns1.example.test
 nameservers: [ns1.example.test, ns2.example.test]
 records:
+  - { comment: "Customer web front end" }   # comment-only: a heading line, checked by verify.yml
   - { name: www, type: A, value: 10.153.53.30 }

@@ -86,20 +86,23 @@
       loop_control:
         label: "{{ item.name }} {{ item.type }}"
 
-    - name: Read the rendered example.test zone file
+    - name: Read the rendered zone files (one from bind_zones, one from zones.d)
       ansible.builtin.slurp:
-        src: /var/named/zones/example.test.zone
-      register: example_zone
+        src: "/var/named/zones/{{ item }}.zone"
+      register: zone_files
+      loop: [example.test, customer.test]
 
     - name: Check comment-only records became heading lines
       vars:
-        zone_lines: "{{ (example_zone.content | b64decode).splitlines() }}"
+        example_lines: "{{ (zone_files.results[0].content | b64decode).splitlines() }}"
+        customer_lines: "{{ (zone_files.results[1].content | b64decode).splitlines() }}"
       ansible.builtin.assert:
         that:
-          - "'; Name servers' in zone_lines"
-          - "'; Web and mail.' in zone_lines"
-          - "'; verify.yml checks these still resolve below the headings.' in zone_lines"
-        fail_msg: "{{ zone_lines }}"
+          - "'; Name servers' in example_lines"
+          - "'; Web and mail.' in example_lines"
+          - "'; verify.yml checks these still resolve below the headings.' in example_lines"
+          - "'; Customer web front end' in customer_lines"   # from zones.d via bind_zones_vars_dir
+        fail_msg: "example.test: {{ example_lines }} / customer.test: {{ customer_lines }}"
 
     - name: Wait for example.test to be signed
       ansible.builtin.command: dig +dnssec +norec @127.0.0.1 example.test SOA
