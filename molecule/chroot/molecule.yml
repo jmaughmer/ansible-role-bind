@@ -5,7 +5,7 @@
 # /var/named/chroot, that the role's bind mounts are in place, and that
 # signing, query logging and dnstap all still work through them.
 #   molecule test -s chroot
-# MOLECULE_DISTRO picks the EL release, as in the default scenario.
+# MOLECULE_EL_VERSION picks the AlmaLinux release, as in the default scenario.
 #
 # In a rootless container, named-chroot's setup script can't create the
 # chroot's /dev nodes (mknod isn't allowed in a user namespace), so
@@ -23,7 +23,7 @@ driver:
 
 platforms:
   - name: ns-chroot
-    image: "docker.io/geerlingguy/docker-${MOLECULE_DISTRO:-rockylinux9}-ansible:latest"
+    image: "docker.io/almalinux/${MOLECULE_EL_VERSION:-10}-init:latest"
     pre_build_image: true
     override_command: false   # keep the image's own CMD: systemd as PID 1
     systemd: always

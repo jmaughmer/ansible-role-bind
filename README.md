@@ -974,9 +974,7 @@ check nothing changes the second time, then
 Inside containers SELinux is off and firewalld isn't installed, so the
 tests exercise the role's skip paths for both.
 
-The default scenario uses Podman (rootless works). A `docker` scenario
-runs the same test on Docker, sharing the default scenario's playbooks,
-inventory (`molecule/default/inventory/`) and `zones.d/`. The servers find
+Every scenario uses Podman (rootless works). The servers find
 each other through gathered facts rather than fixed addresses, so the
 container network's subnet doesn't matter.
 
@@ -1035,14 +1033,14 @@ things:
 3. **Turning the export off.** It applies the role with the export
    disabled, then checks the timer, units and converter are removed while
    the capture and the exported JSON stay.
-4. **Rocky 8 only.** It checks that enabling dnstap on the base BIND 9.11
+4. **EL8 only.** It checks that enabling dnstap on the base BIND 9.11
    fails with its explanation.
 
-Requirements: Podman or Docker, and the Python packages in
+Requirements: Podman (rootless works) and the Python packages in
 [`molecule/requirements.txt`](molecule/requirements.txt). On Windows, run
-from a WSL shell. The containers use Jeff Geerling's systemd-enabled
-`docker-rockylinuxN-ansible` images; `MOLECULE_DISTRO` picks the EL
-release (default `rockylinux9`):
+from a shell in the `AlmaLinux-10` WSL distro, using its Podman. The
+containers use AlmaLinux's systemd-enabled `almalinux/N-init` images;
+`MOLECULE_EL_VERSION` picks the release (default `10`):
 
 ```bash
 pip install -r molecule/requirements.txt
@@ -1053,11 +1051,11 @@ molecule test
 ```
 
 ```bash
-MOLECULE_DISTRO=rockylinux8 molecule test
+MOLECULE_EL_VERSION=9 molecule test
 ```
 
 ```bash
-MOLECULE_DISTRO=rockylinux10 molecule test
+MOLECULE_EL_VERSION=8 molecule test
 ```
 
 ```bash
@@ -1072,14 +1070,10 @@ molecule test -s geoip
 molecule test -s dnstap
 ```
 
-```bash
-molecule test -s docker
-```
-
-On Rocky 8, the primary's DNSSEC signing and the resolver's dnstap both
+On AlmaLinux 8, the primary's DNSSEC signing and the resolver's dnstap both
 switch those hosts to `bind9.16`, while the secondary stays on the base
 BIND 9.11 package, so one run covers both RHEL 8 flavors — `verify.yml`
-checks each host ends up on the expected one. Rocky 8's only Python is
+checks each host ends up on the expected one. AlmaLinux 8's only Python is
 3.6, which ansible-core 2.17+ can't manage, so
 [`prepare.yml`](molecule/default/prepare.yml) installs Python 3.11 on EL8
 containers first (see **Requirements**). While working on

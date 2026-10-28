@@ -5,9 +5,9 @@
 #   ns-slave   secondary that transfers every zone from it
 #   resolver   caching resolver forwarding example.test to the primary,
 #              with DNS64 and dnstap export
-# MOLECULE_DISTRO picks the EL release (default rockylinux9; also
-# rockylinux8, rockylinux10) — see the README's "Testing" section. The
-# playbooks, inventory and zones.d here are shared with the docker scenario.
+# Run from the AlmaLinux-10 WSL distro with its rootless Podman.
+# MOLECULE_EL_VERSION picks the AlmaLinux init image (default 10; also
+# 8, 9) — see the README's "Testing" section.
 #
 # Inside containers SELinux is off and firewalld isn't installed, so this
 # exercises the role's skip paths for both. Chroot and GeoIP have their own
@@ -24,7 +24,7 @@ driver:
 
 platforms:
   - name: ns-master
-    image: "docker.io/geerlingguy/docker-${MOLECULE_DISTRO:-rockylinux9}-ansible:latest"
+    image: "docker.io/almalinux/${MOLECULE_EL_VERSION:-10}-init:latest"
     pre_build_image: true
     override_command: false   # keep the image's own CMD: systemd as PID 1
     systemd: always
@@ -32,7 +32,7 @@ platforms:
     network: bind_dns_molecule   # created by the driver from the first platform
 
   - name: ns-slave
-    image: "docker.io/geerlingguy/docker-${MOLECULE_DISTRO:-rockylinux9}-ansible:latest"
+    image: "docker.io/almalinux/${MOLECULE_EL_VERSION:-10}-init:latest"
     pre_build_image: true
     override_command: false
     systemd: always
@@ -40,7 +40,7 @@ platforms:
     network: bind_dns_molecule
 
   - name: resolver
-    image: "docker.io/geerlingguy/docker-${MOLECULE_DISTRO:-rockylinux9}-ansible:latest"
+    image: "docker.io/almalinux/${MOLECULE_EL_VERSION:-10}-init:latest"
     pre_build_image: true
     override_command: false
     systemd: always

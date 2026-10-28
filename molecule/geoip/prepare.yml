@@ -1,5 +1,5 @@
 ---
-- name: Install Python 3.11 on EL8 hosts
+- name: Install sudo, iproute, and Python 3.11 on EL8 hosts
   ansible.builtin.import_playbook: ../default/prepare.yml
 
 - name: Supply a GeoIP2 database and test client addresses

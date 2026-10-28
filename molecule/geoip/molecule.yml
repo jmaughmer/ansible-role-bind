@@ -6,7 +6,7 @@
 # and gives the container one address from a GB test network and one from
 # an SE one; verify.yml then tries AXFR from each.
 #   molecule test -s geoip
-# MOLECULE_DISTRO picks the EL release, as in the default scenario.
+# MOLECULE_EL_VERSION picks the AlmaLinux release, as in the default scenario.
 # geoipupdate itself isn't exercised: it needs real MaxMind credentials.
 role_name_check: 1
 
@@ -20,7 +20,7 @@ driver:
 
 platforms:
   - name: ns-geoip
-    image: "docker.io/geerlingguy/docker-${MOLECULE_DISTRO:-rockylinux9}-ansible:latest"
+    image: "docker.io/almalinux/${MOLECULE_EL_VERSION:-10}-init:latest"
     pre_build_image: true
     override_command: false   # keep the image's own CMD: systemd as PID 1
     systemd: always

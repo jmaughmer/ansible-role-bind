@@ -14,7 +14,7 @@
 #   4. on EL8, checks enabling dnstap on base BIND 9.11 fails with its
 #      explanation.
 #   molecule test -s dnstap
-# MOLECULE_DISTRO picks the EL release, as in the default scenario.
+# MOLECULE_EL_VERSION picks the AlmaLinux release, as in the default scenario.
 role_name_check: 1
 
 dependency:
@@ -27,7 +27,7 @@ driver:
 
 platforms:
   - name: ns-dnstap
-    image: "docker.io/geerlingguy/docker-${MOLECULE_DISTRO:-rockylinux9}-ansible:latest"
+    image: "docker.io/almalinux/${MOLECULE_EL_VERSION:-10}-init:latest"
     pre_build_image: true
     override_command: false   # keep the image's own CMD: systemd as PID 1
     systemd: always
@@ -36,7 +36,7 @@ platforms:
 provisioner:
   name: ansible
   playbooks:
-    prepare: ../default/prepare.yml   # Python 3.11 on EL8 for ansible-core 2.17+
+    prepare: ../default/prepare.yml   # sudo, iproute; Python 3.11 on EL8
   inventory:
     links:
       group_vars: ../default/inventory/group_vars/
