@@ -435,7 +435,10 @@ bind_rate_limit: {}
 #                         recursive ones (named only forwards recursive
 #                         queries)
 #   file:                zone data filename, default "<name>.zone"
-#   allow_transfer_acl:  overrides bind_allow_transfer_acl for this zone
+#   allow_transfer_acl:  master zones: overrides bind_allow_transfer_acl.
+#                         Slave zones don't use bind_allow_transfer_acl and
+#                         default to none; set this on a slave that feeds
+#                         secondaries of its own
 #   also_notify:         list of IPs to NOTIFY as well, master and slave zones
 #                         (a slave can notify secondaries of its own)
 #   notify:              yes|no, overrides bind_notify for this zone (master
