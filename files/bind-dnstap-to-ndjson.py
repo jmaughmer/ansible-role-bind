@@ -618,15 +618,18 @@ def rolled_files(active):
 
 def convert_file(f, out, max_size, backups, output_path, pairer):
     """Append one NDJSON line per dnstap message in open file f.
-    Returns (count, error)."""
+    Returns (count, skipped, error): messages written, undecodable frames
+    skipped (conversion carries on past those), and why reading the file
+    stopped early, if it did."""
     count = 0
+    skipped = []
     error = None
     try:
         for frame in read_frames(f):
             try:
                 built = build_event(frame)
             except (ValueError, IndexError, struct.error) as exc:
-                error = "skipped undecodable frame: %s" % exc
+                skipped.append(str(exc))
                 continue
             if built is None:
                 continue
@@ -640,7 +643,7 @@ def convert_file(f, out, max_size, backups, output_path, pairer):
             count += 1
     except (Truncated, ValueError, struct.error) as exc:
         error = str(exc)
-    return count, error
+    return count, skipped, error
 
 
 def main():
@@ -658,12 +661,14 @@ def main():
     if args.roll is not None:
         # On failure, still convert whatever named rolled on its own (size limit).
         try:
+            # timeout: a hung rndc would otherwise hold the timer's service
+            # in "activating" and block every later run.
             result = subprocess.run([args.rndc, "dnstap", "-roll", str(args.roll)],
                                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                    universal_newlines=True)
+                                    universal_newlines=True, timeout=120)
             if result.returncode != 0:
                 print("rndc dnstap -roll failed: %s" % result.stdout.strip(), file=sys.stderr)
-        except OSError as exc:
+        except (OSError, subprocess.TimeoutExpired) as exc:
             print("rndc dnstap -roll failed: %s" % exc, file=sys.stderr)
 
     processed, pending = load_state(args.state_file)
@@ -686,10 +691,14 @@ def main():
                 present.add(key)
                 if key in processed:
                     continue
-                count, error = convert_file(f, out, args.max_size, args.backups, args.output, pairer)
+                count, skipped, error = convert_file(f, out, args.max_size, args.backups, args.output, pairer)
             out[0].flush()
             os.fsync(out[0].fileno())
             total += count
+            if skipped:
+                # A warning, not a failure: the rest of the file converted.
+                print("%s: skipped %d undecodable frame(s), first: %s"
+                      % (path, len(skipped), skipped[0]), file=sys.stderr)
             if error:
                 failures += 1
                 print("%s: %s (kept %d messages before it)" % (path, error, count), file=sys.stderr)
