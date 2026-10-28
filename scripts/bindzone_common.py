@@ -74,7 +74,9 @@ def dump_zone_canonical(named_checkzone, zone_name, zone_file, zone_root=None):
             + "\n".join(f"  {line}" for line in result.stderr.splitlines())
         )
 
-    lines = [ln for ln in result.stdout.splitlines() if ln.strip() and not ln.lstrip().startswith(";")]
+    # Records only: also drop any $ORIGIN/$TTL directive, which the full
+    # style shouldn't print but which isn't a record to parse if it does.
+    lines = [ln for ln in result.stdout.splitlines() if ln.strip() and not ln.lstrip().startswith((";", "$"))]
     if not lines:
         die(
             f"error: named-checkzone produced no records for zone '{zone_name}' — "

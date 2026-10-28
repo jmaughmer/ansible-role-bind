@@ -312,11 +312,11 @@ def emit_zone(zone, transfer_acl, also_notify, key_findings):
         out.append(comment)
     out.append(f"  - name: {yaml_str(zone['name'])}")
     out.append("    type: master")
-    out.append(f"    allow_transfer_acl: {transfer_acl}")
+    out.append(f"    allow_transfer_acl: {yaml_str(transfer_acl)}")
     if also_notify:
         out.append("    also_notify:")
         for ip in also_notify:
-            out.append(f"      - {ip}")
+            out.append(f"      - {yaml_str(ip)}")
     if key_findings:
         out.append("    # dnssec: true   # uncomment once bind_dnssec_enable_signing / a policy is set up — see notes above")
     out.append(f"    primary_ns: {yaml_str(zone['primary_ns'])}")
