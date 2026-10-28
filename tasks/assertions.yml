@@ -5,6 +5,16 @@
       - bind_dns_role in ['authoritative', 'recursive']
     fail_msg: "bind_dns_role must be 'authoritative' or 'recursive', got '{{ bind_dns_role }}'"
 
+- name: Fail if named would listen on no address at all
+  # Empty lists render "listen-on port 53 { };", which named accepts and then
+  # answers nothing. One empty family (IPv4-only or IPv6-only) is fine.
+  ansible.builtin.assert:
+    that:
+      - bind_listen_ipv4 | length > 0 or bind_listen_ipv6 | length > 0
+    fail_msg: >-
+      bind_listen_ipv4 and bind_listen_ipv6 are both empty, so named would start but listen on nothing.
+      Give at least one address (or "any") in either list.
+
 - name: Fail if the forwarding policy is invalid or has nothing to forward to
   # The forward statement is only rendered alongside a forwarders list, so
   # "only" with no forwarders would silently resolve from the root servers.
@@ -158,6 +168,17 @@
       to export. Set bind_dnstap_enabled: true as well.
   when: bind_dnstap_export_enabled
 
+- name: Fail if the dnstap export keeps no rotated NDJSON file
+  # With 0 the converter deletes the full NDJSON file on rotation, before
+  # Elastic Agent has necessarily read its last events.
+  ansible.builtin.assert:
+    that:
+      - bind_dnstap_ndjson_versions | int >= 1
+    fail_msg: >-
+      bind_dnstap_ndjson_versions is {{ bind_dnstap_ndjson_versions }}; keep at least 1 rotated NDJSON file
+      so Elastic Agent can finish reading it after a rotation.
+  when: bind_dnstap_export_enabled
+
 - name: Fail if DNS64 is enabled without recursion
   ansible.builtin.assert:
     that:
@@ -200,6 +221,18 @@
   loop_control:
     label: "{{ item.name }}"
   when: item.type == 'slave'
+
+- name: Fail if a zone's file name would leave its zone directory
+  # zone.file is joined onto bind_zones_dir / bind_slave_zones_dir, for the
+  # files the role writes as root and in named.conf.
+  ansible.builtin.assert:
+    that:
+      - item.file is not match('^/')
+      - "'..' not in (item.file | string).split('/')"
+    fail_msg: "Zone '{{ item.name }}' has file '{{ item.file }}': give a name relative to its zone directory, without '..'."
+  loop: "{{ bind_zones | selectattr('file', 'defined') | list }}"
+  loop_control:
+    label: "{{ item.name }}"
 
 - name: Fail if a zone record is neither a full record nor a comment line
   ansible.builtin.assert:
