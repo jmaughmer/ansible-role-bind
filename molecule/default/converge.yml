@@ -13,7 +13,7 @@
   tasks: []
 
 - name: Converge the primary
-  hosts: ns-master
+  hosts: ns_master
   become: true
   tasks:
     - name: Apply the role
@@ -21,7 +21,7 @@
         name: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}"
 
 - name: Converge the secondary
-  hosts: ns-slave
+  hosts: ns_slave
   become: true
   tasks:
     - name: Apply the role

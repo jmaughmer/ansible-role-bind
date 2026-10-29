@@ -21,8 +21,14 @@ dependency:
 driver:
   name: podman
 
+# Instance names carry the scenario and EL release (bind-<scenario>-el<N>-
+# <host>), so scenarios and releases can run side by side, also next to other
+# projects' containers; inside, each keeps its short hostname. Playbooks and
+# inventory/group_vars/ target the instances by group, not by name.
 platforms:
-  - name: ns-chroot
+  - name: bind-chroot-el${MOLECULE_EL_VERSION:-10}-ns-chroot
+    hostname: ns-chroot
+    groups: [ns_chroot]
     image: "docker.io/almalinux/${MOLECULE_EL_VERSION:-10}-init:latest"
     pre_build_image: true
     override_command: false   # keep the image's own CMD: systemd as PID 1
@@ -32,12 +38,12 @@ platforms:
 provisioner:
   name: ansible
   env:
-    # Decrypts the test rndc key in host_vars/ns-chroot.yml.
+    # Decrypts the test rndc key in group_vars/ns_chroot.yml.
     ANSIBLE_VAULT_PASSWORD_FILE: ${MOLECULE_SCENARIO_DIRECTORY}/vault-password.sh
   inventory:
     links:
-      group_vars: ../default/inventory/group_vars/
-      host_vars: inventory/host_vars/
+      group_vars: inventory/group_vars/
+      shared.yml: ../shared-inventory.yml
 
 verifier:
   name: ansible

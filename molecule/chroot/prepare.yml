@@ -8,7 +8,7 @@
   hosts: all
   become: true
   tasks:
-    - name: Create the extra directory host_vars bind-mounts into the chroot
+    - name: Create the extra directory group_vars bind-mounts into the chroot
       ansible.builtin.file:
         path: /srv/named-extra
         state: directory

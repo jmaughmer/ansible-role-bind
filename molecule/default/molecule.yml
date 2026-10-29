@@ -22,37 +22,47 @@ dependency:
 driver:
   name: podman
 
+# Instance names carry the scenario and EL release (bind-<scenario>-el<N>-
+# <host>), so scenarios and releases can run side by side, also next to other
+# projects' containers; inside, each keeps its short hostname. Playbooks and
+# inventory/group_vars/ target the instances by group, not by name.
 platforms:
-  - name: ns-master
+  - name: bind-default-el${MOLECULE_EL_VERSION:-10}-ns-master
+    hostname: ns-master
+    groups: [ns_master]
     image: "docker.io/almalinux/${MOLECULE_EL_VERSION:-10}-init:latest"
     pre_build_image: true
     override_command: false   # keep the image's own CMD: systemd as PID 1
     systemd: always
     privileged: true          # lets systemd sandbox services (the dnstap converter)
-    network: bind_dns_molecule   # created by the driver from the first platform
+    network: bind-default-el${MOLECULE_EL_VERSION:-10}   # created by the driver from the first platform
 
-  - name: ns-slave
+  - name: bind-default-el${MOLECULE_EL_VERSION:-10}-ns-slave
+    hostname: ns-slave
+    groups: [ns_slave]
     image: "docker.io/almalinux/${MOLECULE_EL_VERSION:-10}-init:latest"
     pre_build_image: true
     override_command: false
     systemd: always
     privileged: true
-    network: bind_dns_molecule
+    network: bind-default-el${MOLECULE_EL_VERSION:-10}
 
-  - name: resolver
+  - name: bind-default-el${MOLECULE_EL_VERSION:-10}-resolver
+    hostname: resolver
+    groups: [resolver]
     image: "docker.io/almalinux/${MOLECULE_EL_VERSION:-10}-init:latest"
     pre_build_image: true
     override_command: false
     systemd: always
     privileged: true
-    network: bind_dns_molecule
+    network: bind-default-el${MOLECULE_EL_VERSION:-10}
 
 provisioner:
   name: ansible
   inventory:
     links:
       group_vars: inventory/group_vars/
-      host_vars: inventory/host_vars/
+      shared.yml: ../shared-inventory.yml
 
 verifier:
   name: ansible

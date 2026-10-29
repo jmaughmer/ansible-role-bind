@@ -24,7 +24,7 @@
       # Signing (ns-master) and dnstap (resolver) need 9.16; the secondary
       # needs neither, so it stays on RHEL 8's base 9.11 package.
       vars:
-        expected: "{{ '9.11' if inventory_hostname == 'ns-slave' else '9.16' }}"
+        expected: "{{ '9.11' if 'ns_slave' in group_names else '9.16' }}"
       ansible.builtin.assert:
         that:
           - named_version.stdout is search('^BIND ' ~ (expected | regex_escape) ~ '\.')
@@ -59,7 +59,7 @@
         fail_msg: "Policy disables {{ disabled }}; effective config: {{ effective_conf.stdout_lines | select('search', 'disable|^\\s+[A-Z0-9-]+;$') | list }}"
 
 - name: Verify the primary
-  hosts: ns-master
+  hosts: ns_master
   become: true
   gather_facts: false
   tasks:
@@ -135,7 +135,7 @@
         fail_msg: "Unexpected DS file content: {{ ds_file.content | b64decode }}"
 
 - name: Verify the secondary
-  hosts: ns-slave
+  hosts: ns_slave
   become: true
   gather_facts: false
   tasks:

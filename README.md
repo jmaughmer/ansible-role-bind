@@ -1070,6 +1070,31 @@ molecule test -s geoip
 molecule test -s dnstap
 ```
 
+Container and network names carry the scenario and EL release
+(`bind-default-el10-ns-master`, network `bind-default-el10`), so tests can
+run side by side, also next to other projects' containers. Inside, each
+container keeps its short hostname (`ns-master`), and the playbooks and
+`inventory/group_vars/` find instances by group rather than by name.
+Every scenario at once, as separate Molecule runs (Molecule's own
+`--workers` only works for collections, not roles):
+
+```bash
+for s in default chroot geoip dnstap; do molecule test -s $s > molecule-$s.log 2>&1 & done; wait
+```
+
+Molecule keeps one state directory per scenario, so running the *same*
+scenario on two releases at once needs a separate one for each run:
+
+```bash
+MOLECULE_EL_VERSION=9 MOLECULE_EPHEMERAL_DIRECTORY=$HOME/.cache/molecule-bind-default-el9 molecule test
+```
+
+Each systemd container holds several inotify instances, and rootless
+containers share their user's limit (`fs.inotify.max_user_instances`,
+128 by default). With many containers up at once, new ones can stop right
+after starting or fail `service_facts`; raise the limit (for example to
+1024) if that happens.
+
 On AlmaLinux 8, the primary's DNSSEC signing and the resolver's dnstap both
 switch those hosts to `bind9.16`, while the secondary stays on the base
 BIND 9.11 package, so one run covers both RHEL 8 flavors — `verify.yml`

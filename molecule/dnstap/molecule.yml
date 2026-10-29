@@ -25,8 +25,14 @@ dependency:
 driver:
   name: podman
 
+# Instance names carry the scenario and EL release (bind-<scenario>-el<N>-
+# <host>), so scenarios and releases can run side by side, also next to other
+# projects' containers; inside, each keeps its short hostname. Playbooks and
+# inventory/group_vars/ target the instances by group, not by name.
 platforms:
-  - name: ns-dnstap
+  - name: bind-dnstap-el${MOLECULE_EL_VERSION:-10}-ns-dnstap
+    hostname: ns-dnstap
+    groups: [ns_dnstap]
     image: "docker.io/almalinux/${MOLECULE_EL_VERSION:-10}-init:latest"
     pre_build_image: true
     override_command: false   # keep the image's own CMD: systemd as PID 1
@@ -39,8 +45,8 @@ provisioner:
     prepare: ../default/prepare.yml   # sudo, iproute; Python 3.11 on EL8
   inventory:
     links:
-      group_vars: ../default/inventory/group_vars/
-      host_vars: inventory/host_vars/
+      group_vars: inventory/group_vars/
+      shared.yml: ../shared-inventory.yml
 
 verifier:
   name: ansible

@@ -1,0 +1,9 @@
+---
+# Linked into every scenario's inventory directory (inventory.links in each
+# molecule.yml), where Ansible reads it as one more inventory source.
+all:
+  vars:
+    # DS records land in Molecule's scratch directory, not the repository.
+    bind_dnssec_ds_output_dir: "{{ lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}/dnssec-ds-records"
+    # Containers can be slow to generate keys on a busy machine.
+    bind_dnssec_key_wait_retries: 24
