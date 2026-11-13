@@ -197,6 +197,51 @@
       clients clause. Put every DNS64 client in bind_dns64_clients_acl, as a string or a list.
   when: bind_dns64_enabled
 
+# These three run before everything else that loops bind_zones: the later
+# groupby('name') and every when/label keyed on item.name/item.type would
+# otherwise die with an undefined-variable error on a nameless/typeless
+# entry instead of this clear message.
+- name: Fail if a bind_zones entry has no name or no type
+  ansible.builtin.assert:
+    that:
+      - item.name is defined
+      - item.type is defined
+    fail_msg: >-
+      A bind_zones entry needs both name and type, got: {{ item | to_json }}
+  loop: "{{ bind_zones }}"
+  loop_control:
+    label: "{{ item | to_json }}"
+
+- name: Fail if a zone's type isn't one the role models
+  ansible.builtin.assert:
+    that:
+      - item.type in ['master', 'slave', 'forward']
+    fail_msg: >-
+      Zone '{{ item.name }}' has type '{{ item.type }}' — the role models only master, slave
+      and forward. (primary/secondary are BIND's own synonyms; write master/slave here,
+      and hint/stub/static-stub zones belong outside this role.)
+  loop: "{{ bind_zones }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Fail if a role-managed master zone can't build its SOA or apex NS records
+  # zones.yml renders zone.db.j2 for master zones that define records; that
+  # template prints primary_ns bare — an undefined one silently renders as an
+  # empty SOA mname — and loops nameservers, where undefined is an opaque
+  # template error and an empty list yields an apex with no NS records.
+  ansible.builtin.assert:
+    that:
+      - item.primary_ns is defined
+      - item.primary_ns | length > 0
+      - item.nameservers | default([]) | length > 0
+    fail_msg: >-
+      Zone '{{ item.name }}' is type: master with records, so the role generates its zone file —
+      but it has no primary_ns (the SOA's primary nameserver) and/or no nameservers (the apex NS
+      list); the generated file would carry an empty SOA mname or no NS records at all.
+  loop: "{{ bind_zones | selectattr('type', 'equalto', 'master') | selectattr('records', 'defined') | list }}"
+  loop_control:
+    label: "{{ item.name }}"
+
 - name: Fail if the same zone name is defined more than once
   # Across both bind_zones directly and everything bind_zones_dir loaded —
   # load_zones.yml already merged both into bind_zones by this point, so

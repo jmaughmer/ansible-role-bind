@@ -164,6 +164,13 @@
       register: signed_answer
       changed_when: false
       failed_when: "'RRSIG' not in signed_answer.stdout"
+      # The transfer-wait above only proves the first records answered — not
+      # that this copy is the final signed version yet (notify/transfer and
+      # the master's dnssec-policy are asynchronous). Retry like the sibling
+      # transfer checks so a slow signing pass can't flake the run.
+      until: "'RRSIG' in signed_answer.stdout"
+      retries: 15
+      delay: 2
 
     - name: Check transferred zones were saved to disk
       ansible.builtin.stat:
