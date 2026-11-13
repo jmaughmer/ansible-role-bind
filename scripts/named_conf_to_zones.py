@@ -336,8 +336,21 @@ def convert_zones(text, wanted_types, warn, keep_stock=False):
         if ztype == "slave":
             m_args, m_items = opts.get("masters") or opts.get("primaries") or ([], None)
             handled |= {"masters", "primaries"}
-            if not m_items:
+            if not m_items and m_args:
+                # masters "name"; / primaries name; — the zone-statement form
+                # that references a named top-level masters/primaries list
+                # (BIND 9.9+): there is no block here, the entries live in
+                # masters_lists, so resolve the reference before the empty
+                # check below, or the zone would migrate with empty masters.
+                ref = unquote(m_args[0])
+                if ref in masters_lists:
+                    m_items = masters_lists[ref]
+                else:
+                    warn(f'zone "{name}": masters reference {ref!r} is not a known masters/primaries list — '
+                         "migrated with an empty list, fill it in")
+            elif not m_items:
                 warn(f'zone "{name}": slave zone without masters — migrated with an empty list, fill it in')
+            if not m_items:
                 m_items = []
             entry["masters"] = expand_masters(with_port(m_items, m_args), masters_lists, warn, name)
             keys_needed.update(tsig_keys(entry["masters"]))
@@ -370,6 +383,7 @@ def convert_zones(text, wanted_types, warn, keep_stock=False):
                 handled.add("also-notify")
                 a_args, a_items = opts["also-notify"]
                 entry["also_notify"] = expand_masters(with_port(a_items or [], a_args), masters_lists, warn, name)
+                keys_needed.update(tsig_keys(entry["also_notify"]))
             if "notify" in opts:
                 handled.add("notify")
                 value = (opts["notify"][0] or [""])[0].lower()
@@ -378,10 +392,20 @@ def convert_zones(text, wanted_types, warn, keep_stock=False):
                 else:
                     notes.append(f"notify {value}: the role only sets notify yes/no — left at its default")
         if "zone-statistics" in opts:
-            handled.add("zone-statistics")
             value = (opts["zone-statistics"][0] or [""])[0].lower()
-            if value in ("yes", "full", "no", "none"):
-                entry["zone_statistics"] = value in ("yes", "full")
+            if value in ("yes", "no"):
+                handled.add("zone-statistics")
+                entry["zone_statistics"] = value == "yes"
+            elif value in ("full", "none"):
+                # Handled, but lossily: the role's zone template only writes
+                # yes/no, so full's extra per-record detail and none's
+                # explicit off both flatten to yes/no — say so in the output.
+                handled.add("zone-statistics")
+                entry["zone_statistics"] = value == "full"
+                notes.append(f"zone-statistics {value}: the role only has yes/no — migrated as "
+                             f"{'yes' if value == 'full' else 'no'}")
+            # any other value stays unhandled on purpose, so it shows up in
+            # the "not migrated" note below instead of vanishing
 
         rest = [stmt for stmt in items if parse_statement(stmt)[0] not in handled]
         if rest:
@@ -398,7 +422,8 @@ def convert_zones(text, wanted_types, warn, keep_stock=False):
     for elements, acl_name in xfer_lists.items():
         acl_defs[acl_name] = list(elements)
     if keys_needed:
-        warn("TSIG key(s) " + ", ".join(sorted(keys_needed)) + " are used by masters/allow-transfer but the bind_dns "
+        warn("TSIG key(s) " + ", ".join(sorted(keys_needed)) + " are used by masters/allow-transfer/also-notify "
+             "but the bind_dns "
              "role doesn't define TSIG keys — add the key { } statements to the new servers yourself, or named "
              "won't load the config")
     return out, acl_defs, sorted(keys_needed)
