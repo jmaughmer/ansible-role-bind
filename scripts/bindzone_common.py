@@ -5,9 +5,15 @@ check_ptr_records.py so both parse zone data identically. See
 scripts/README.md for what those two scripts actually do.
 """
 
+import re
 import shutil
 import subprocess
 import sys
+
+
+# '#' starts a comment in a zones file only at the line start or after
+# whitespace — see collect_zone_pairs.
+_COMMENT_RE = re.compile(r"(^|\s)#.*")
 
 
 class ZoneParseError(Exception):
@@ -110,12 +116,18 @@ def relativize(owner, zone_name):
     dot), regardless of how many $ORIGIN changes or $INCLUDEd files were
     involved in the source — so this string operation is all that's needed
     here; no origin tracking of our own.
+
+    DNS names are case-insensitive but case-preserving (RFC 1035 2.3.3/24.2),
+    and the owner casing here comes straight from the master file while the
+    zone name comes from the CLI/named.conf — so matching uses casefold and
+    only the comparison is folded. The returned slice keeps the file's own
+    casing, exactly as a relative name written by hand would.
     """
     origin = zone_name.rstrip(".") + "."
-    if owner == origin:
+    if owner.casefold() == origin.casefold():
         return "@"
     suffix = "." + origin
-    if owner.endswith(suffix):
+    if owner[-len(suffix):].casefold() == suffix.casefold():
         return owner[: -len(suffix)]
     # Owner isn't under this zone's origin at all (unusual, but not
     # impossible — e.g. a stray $ORIGIN in an $INCLUDEd file). Keep it as an
@@ -134,7 +146,8 @@ def add_common_arguments(parser):
     )
     parser.add_argument(
         "--zones-file", metavar="PATH",
-        help="text file with one '<zone> <path>' pair per line (# comments and blank lines ignored)",
+        help="text file with one '<zone> <path>' pair per line (# at the line start or after a space "
+             "starts a comment; a # inside a path is kept; blank lines ignored)",
     )
     parser.add_argument("--named-checkzone", metavar="PATH", help="path to named-checkzone if not on PATH")
     parser.add_argument(
@@ -165,9 +178,20 @@ def collect_zone_pairs(args, parser):
         pairs.append((zone, path))
 
     if args.zones_file:
-        with open(args.zones_file, encoding="utf-8") as f:
+        try:
+            f = open(args.zones_file, encoding="utf-8")
+        except OSError as exc:
+            # Unwrap a directory or a permission-denied path to exit 2 like
+            # every other usage error here (and like argparse's own FileType
+            # check for a nonexistent path); an escaping OSError would exit 1,
+            # the status reserved for "inconsistencies found".
+            parser.error(f"can't open --zones-file {args.zones_file!r}: {exc.strerror}")
+        with f:
             for lineno, line in enumerate(f, start=1):
-                line = line.split("#", 1)[0].strip()
+                # A '#' only starts a comment at the line start or after
+                # whitespace: '#' is a legal filename character on Linux, and
+                # zone paths here are often copy/pasted dump locations.
+                line = _COMMENT_RE.sub("", line).strip()
                 if not line:
                     continue
                 parts = line.split()
