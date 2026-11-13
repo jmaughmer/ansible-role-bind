@@ -16,8 +16,16 @@
 # meta/main.yml has no galaxy namespace; warn rather than fail on it.
 role_name_check: 1
 
+# Molecule runs the galaxy dependency through two installers: the roles one
+# reads options["role-file"] (default <scenario>/requirements.yml) and the
+# collections one options["requirements-file"] (default <scenario>/
+# collections.yml). This scenario's file holds collections, so it's named
+# explicitly — the same override the other scenarios use to reach
+# molecule/default/requirements.yml. Without it, nothing here gets installed.
 dependency:
-  name: galaxy   # installs requirements.yml next to this file
+  name: galaxy
+  options:
+    requirements-file: ${MOLECULE_SCENARIO_DIRECTORY}/requirements.yml
 
 driver:
   name: podman
