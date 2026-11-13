@@ -1,5 +1,8 @@
 ---
-# ansible-galaxy install -r requirements.yml -p roles/
+# Install with both commands — a plain "install -r" only reads the roles:
+# section; collections need their own command:
+#   ansible-galaxy install -r requirements.yml -p roles/
+#   ansible-galaxy collection install -r requirements.yml
 roles:
   - src: https://github.com/jmaughmer/ansible-role-bind.git
     name: bind_dns

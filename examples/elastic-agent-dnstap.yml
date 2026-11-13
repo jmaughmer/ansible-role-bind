@@ -2,8 +2,8 @@
 # for hosts with bind_dnstap_enabled and bind_dnstap_export_enabled set.
 #
 # This is a second Custom Logs integration, alongside the text-log one from
-# elastic-bind. In Kibana: Fleet -> Agent policies -> <your
-# policy> -> Add integration -> Custom Logs:
+# elastic-bind (elastic-agent-custom-logs.yml). In Kibana: Fleet -> Agent
+# policies -> <your policy> -> Add integration -> Custom Logs:
 #   - Dataset name:  bind.dnstap
 #   - Paths:         /var/log/named/dnstap.ndjson*
 #     (the trailing * also picks up dnstap.ndjson.1, .2 ... so lines written
@@ -14,13 +14,15 @@
 # bind-dnstap-to-ndjson already writes ECS field names (dns.question.*,
 # dns.answers[], dns.response_code, client.ip, ...) and an absolute UTC
 # @timestamp, so unlike the text logs there's no event.timezone to set.
-# elastic-bind's logs-bind.dnstap@custom ingest pipeline adds registered
-# domain/subdomain/TLD, event.outcome, event.action and related.ip on top,
-# and its component template of the same name maps the fields (ip, long,
-# ...) — load both with that repo's setup.sh first. Without them, drop the
+# The logs-bind.dnstap@custom ingest pipeline adds registered domain/
+# subdomain/TLD, event.outcome, event.action and related.ip on top, and the
+# component template of the same name maps the fields (ip, long, ...) —
+# load both with elastic-bind's setup.sh first. Without them, drop the
 # pipeline line: the events still index, just without those extras and
 # with Elasticsearch's default mappings.
-# (elastic-bind/elastic-agent-dnstap.yml is the same config.)
+#
+# Identical copies of this file live in elastic-bind/ and in the bind_dns
+# Ansible role's examples/ — keep the two in step when editing.
 
 pipeline: logs-bind.dnstap@custom
 parsers:
@@ -28,6 +30,10 @@ parsers:
       target: ""
       overwrite_keys: true
       add_error_key: true
+
+# The ndjson parser decodes each line on the agent. logs-bind.dnstap@custom
+# also decodes a line that arrives undecoded (as "message"), so the parser
+# block is optional — but decoding on the agent spares the cluster the work.
 
 # ---------------------------------------------------------------------------
 # Standalone Elastic Agent (elastic-agent.yml) equivalent:
@@ -43,4 +49,8 @@ parsers:
 #           target: ""
 #           overwrite_keys: true
 #           add_error_key: true
+#
+# A standalone input has no per-input pipeline option; the @custom pipeline
+# applies to Fleet-managed data streams, where the Custom Logs integration
+# references it.
 # ---------------------------------------------------------------------------
