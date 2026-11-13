@@ -45,12 +45,16 @@ def decode_ipv4_ptr(owner_nodot):
     if len(labels) < 4:
         return None
     # Standard in-addr.arpa PTR owner: <addr>.<o3>.<o2>.<o1>.in-addr.arpa —
-    # labels appear in reverse octet order. An RFC 2317 classless-delegation
-    # zone inserts an extra "subnet-id" label between <addr> and the three
-    # network octets (e.g. <addr>.<subnet-id>.<o3>.<o2>.<o1>.in-addr.arpa);
-    # taking the first label and the *last three* — rather than assuming
-    # exactly four — decodes both cases the same way without needing to
-    # detect which one this is.
+    # labels appear in reverse octet order. RFC 2317 classless delegations
+    # are skipped, not decoded — and in practice can't be decoded here: BIND
+    # writes the extra subnet label in CIDR form (a real zone's PTR owners
+    # look like 1.128/26.16.172.in-addr.arpa), the "128/26" label isn't an
+    # octet, so the assembly below raises ValueError and the caller counts
+    # the record as undecodable — decoding it would need the delegated
+    # prefix itself, which lives in the parent zone, not in this owner.
+    # Taking the first label and the *last three* — rather than assuming
+    # exactly four — still decodes any form that merely inserts an extra
+    # plain label, without needing to detect which one this is.
     addr, o3, o2, o1 = labels[0], labels[-3], labels[-2], labels[-1]
     try:
         return ipaddress.IPv4Address(f"{o1}.{o2}.{o3}.{addr}")

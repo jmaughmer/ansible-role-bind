@@ -94,7 +94,8 @@ flags, so the one `zones.txt` from step 1 works for both. Instead of
 (`example.com /var/named/example.com.zone`) or several via repeated
 `-z ZONE=FILE` — useful for a one-off zone without generating a full
 `zones.txt`. `zones.txt` itself is just `<zone name> <file path>` pairs,
-one per line, `#` comments allowed, so it's easy to hand-edit — trim it to
+one per line, `#` comments allowed (a `#` starts one at the line start or
+after whitespace; a `#` inside a path is kept), so it's easy to hand-edit — trim it to
 a subset of zones, fix a path `named_conf_to_zones.py` couldn't resolve,
 add one it missed — before feeding it to the other two. A single
 `zones.txt` can freely mix forward and reverse zones; each script figures
@@ -128,7 +129,7 @@ What it carries over, per zone:
 | `type master` / `primary` + `file "..."` | `type: master`, `file:` (the file name). A comment says to copy the zone file into the role's `bind_zones_dir`, or to convert it with `zone_to_bind_vars.py`. |
 | `allow-transfer { ... }` | `allow_transfer_acl:` |
 | `also-notify { ... }`, `notify yes|no` | `also_notify:`, `notify:` (master and slave zones) |
-| `zone-statistics yes|no` | `zone_statistics:` |
+| `zone-statistics yes|no` / `full|none` | `zone_statistics:` (`full`/`none` flatten to yes/no, with a comment saying so) |
 
 How the transfer settings carry over:
 
@@ -137,9 +138,10 @@ How the transfer settings carry over:
   transfers to anyone, so the zone gets `allow_transfer_acl: any` with a
   comment saying to tighten it.
 - **One ACL per zone:** the role's `allow_transfer_acl` takes one ACL name
-  (or `any`/`none`). A single-element list is used as-is. A longer list
-  becomes a generated ACL, `xfer_1`, `xfer_2` and so on, with identical
-  lists sharing one ACL.
+  (or `any`/`none`). A single-element list is used as-is — unless that one
+  element is a TSIG key requirement or a negation (`key ...` / `!...`),
+  which can't stand alone as an ACL name. A longer list becomes a generated
+  ACL, `xfer_1`, `xfer_2` and so on, with identical lists sharing one ACL.
 - **Referenced ACLs come along:** every `named.conf` ACL the zones
   reference, including ACLs nested in other ACLs, is written as
   `bind_acls`, together with the generated ones. Merge them with the
@@ -153,7 +155,8 @@ What it doesn't carry over, and says so:
 - **Other zone options** (`allow-update`, `max-refresh-time`,
   `notify-source`, `notify explicit`, ...) are listed in a `# not
   migrated:` comment above the zone. The role has no setting for them.
-- **TSIG keys:** a `key name` in masters or `allow-transfer` is kept, but
+- **TSIG keys:** a `key name` in masters, `allow-transfer` or `also-notify`
+  is kept, but
   the role doesn't define TSIG keys. The script warns. Add the `key { };`
   statements on the new servers yourself, or named won't load the config.
 - **Views:** a zone inside a `view { }` gets a comment. The role has no
@@ -438,7 +441,12 @@ result: `named_conf_to_zones.py` writes `named.conf.expanded` (every
   own TTL, if it differs from the zone default, survives only as an
   advisory `comment:`, not an actual per-record override (the role's
   `records:` shape doesn't have one). Search the output for `differs from
-  zone default` after running.
+  zone default` after running. That "default" is the SOA record's own TTL,
+  not the file's `$TTL` — `named-checkzone`'s canonical dump drops `$TTL`
+  entirely, and the SOA TTL is the best available proxy. Master files
+  conventionally set the two equal; if yours sets `$TTL` different from the
+  SOA line's TTL, every record gets a spurious "differs" comment — review
+  them once, they're all the same false positive.
 - **DS/keytag not computed** (`zone_to_bind_vars.py`) — for DNSSEC keys
   found *inline* in a signed zone file (as opposed to standalone `.key`
   files), the migration comment shows role and algorithm but not a key

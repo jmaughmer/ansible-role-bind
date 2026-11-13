@@ -114,6 +114,12 @@ def parse_zone(named_checkzone, zone_name, zone_file, warn, zone_root=None):
         warn(f"{zone_name}: no apex NS records found — nameservers: will be empty; check the zone file")
 
     soa_ttl, soa_rdata = soa
+    # soa_ttl doubles as the zone default TTL below. The source file's own
+    # default is really its leading $TTL — but named-checkzone's canonical
+    # dump doesn't print $TTL at all, so the SOA record's own TTL is the best
+    # available proxy (master files conventionally set them equal). When they
+    # differ, every record gets a spurious "differs from zone default"
+    # comment — harmless noise that self-explains; see scripts/README.md.
     soa_fields = soa_rdata.split()
     if len(soa_fields) != 7:
         die(
