@@ -42,6 +42,25 @@
   register: bind_chroot_path_stat
   when: bind_chroot_enabled
 
+- name: Warn about extra chroot paths that don't exist on the host
+  # A missing path still lands in /etc/named-chroot.files, but there's
+  # nothing to bind-mount and no mount point is created below — a typo in
+  # bind_chroot_extra_paths would otherwise pass silently. (Only the
+  # user-supplied extras are checked: bind_log_dir is created by
+  # directories.yml, and the bind-chroot package itself owns the in-chroot
+  # GeoIP directory.)
+  ansible.builtin.debug:
+    msg: >-
+      bind_chroot_extra_paths entry {{ item.item }} doesn't exist on this host, so
+      nothing is bind-mounted for it in the chroot. Create the path and re-run, or
+      drop it from bind_chroot_extra_paths.
+  loop: "{{ bind_chroot_path_stat.results | default([])
+            | selectattr('stat', 'defined') | rejectattr('stat.exists') | list
+            | selectattr('item', 'in', bind_chroot_extra_paths) }}"
+  loop_control:
+    label: "{{ item.item }}"
+  when: bind_chroot_enabled
+
 - name: Create the mount points inside the chroot
   # No owner/mode on purpose: once named-chroot is running, a mount point IS
   # the bind-mounted host directory, so setting attributes here would change

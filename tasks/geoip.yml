@@ -18,6 +18,14 @@
   diff: false
   when: bind_geoipupdate_install
 
+- name: Remove geoipupdate configuration when it is no longer managed
+  # Flipping bind_geoipupdate_install off would otherwise leave the file —
+  # and with it the MaxMind license key — on the host unmanaged.
+  ansible.builtin.file:
+    path: /etc/GeoIP.conf
+    state: absent
+  when: not bind_geoipupdate_install
+
 - name: Warn if GeoIP is enabled without geoipupdate managing databases
   ansible.builtin.debug:
     msg: >-

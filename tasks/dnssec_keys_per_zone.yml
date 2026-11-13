@@ -14,6 +14,9 @@
 # inline-signing doesn't reliably produce dsset-<zone>. files the way manual
 # dnssec-signzone does, so the KSK is found by content (DNSKEY flag 257 =
 # SEP/KSK bit set) rather than by guessing a filename or key ID.
+# (find's patterns are fnmatch globs: the zone name interpolates literally,
+# and DNS zone names can't contain the glob metacharacters * ? [ that could
+# widen the match to another zone's keys.)
 - name: "{{ bind_dnssec_zone.name }}: wait for a KSK key file to appear"
   ansible.builtin.find:
     paths: "{{ bind_dnssec_keys_dir }}"
