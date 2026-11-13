@@ -265,11 +265,12 @@ bind_log_consolidated_versions: "{{ bind_log_file_versions }}"
 # queries.log out of the shipper's paths instead.
 bind_log_consolidated_exclude: []
 
-# The 17 categories elastic-bind's grok/simulate data covers, plus
-# query-errors (failed queries, e.g. "query failed (SERVFAIL) for ..."),
-# which would otherwise land in the default category's file. Add/remove
-# categories here; both logging layouts iterate this list. A category left
-# out is logged wherever the default category goes.
+# The 18 categories elastic-bind's grok/simulate data covers. query-errors
+# (failed queries, e.g. "query failed (SERVFAIL) for ...", BIND 9.11+) is
+# classified with the query events by the pipeline; without it logged, those
+# failures would land in the default category's file. Add/remove categories
+# here; both logging layouts iterate this list. A category left out is logged
+# wherever the default category goes.
 bind_log_categories:
   - default
   - general
