@@ -948,8 +948,8 @@ disabled on the target.
 
 ## Testing
 
-[`molecule/default/`](molecule/default/) runs the role against three
-systemd containers on one container network, mirroring
+[`molecule/default/`](molecule/default/) runs the role against three KVM
+lab guests (full clones of the lab's AlmaLinux templates), mirroring
 [`examples/`](examples/):
 
 | Instance | Role in the test |
@@ -971,10 +971,11 @@ check nothing changes the second time, then
   AAAA record, refuses recursion to a client outside its ACL, and exports
   dnstap answers as JSON.
 
-Inside containers SELinux is off and firewalld isn't installed, so the
-tests exercise the role's skip paths for both.
+The lab templates run SELinux enforcing with firewalld installed, so the
+tests exercise the role's SELinux and firewalld paths rather than skip
+them.
 
-Every scenario uses Podman (rootless works). The servers find
+The servers find
 each other through gathered facts rather than fixed addresses, so the
 container network's subnet doesn't matter.
 
@@ -1036,11 +1037,13 @@ things:
 4. **EL8 only.** It checks that enabling dnstap on the base BIND 9.11
    fails with its explanation.
 
-Requirements: Podman (rootless works) and the Python packages in
-[`molecule/requirements.txt`](molecule/requirements.txt). On Windows, run
-from a shell in the `AlmaLinux-10` WSL distro, using its Podman. The
-containers use AlmaLinux's systemd-enabled `almalinux/N-init` images;
-`MOLECULE_EL_VERSION` picks the release (default `10`):
+Requirements: a Proxmox VE host the control machine can reach, and the
+Python packages in [`molecule/requirements.txt`](molecule/requirements.txt).
+Everything lab-specific is environment variables: `LAB_PROXMOX_SECRETS`
+(the PVE API token file; default `/root/.config/molecule/proxmox-secrets.yml`),
+`LAB_NODE`, `LAB_SSH_USER` and `LAB_SSH_KEY` (the SSH account the playbooks
+become from), and `LAB_TEMPLATE` for the guest release — `template-alma8`,
+`template-alma9` or `template-alma10` (default):
 
 ```bash
 pip install -r molecule/requirements.txt
@@ -1051,11 +1054,11 @@ molecule test
 ```
 
 ```bash
-MOLECULE_EL_VERSION=9 molecule test
+LAB_TEMPLATE=template-alma9 molecule test
 ```
 
 ```bash
-MOLECULE_EL_VERSION=8 molecule test
+LAB_TEMPLATE=template-alma8 molecule test
 ```
 
 ```bash
@@ -1070,30 +1073,22 @@ molecule test -s geoip
 molecule test -s dnstap
 ```
 
-Container and network names carry the scenario and EL release
-(`bind-default-el10-ns-master`, network `bind-default-el10`), so tests can
-run side by side, also next to other projects' containers. Inside, each
-container keeps its short hostname (`ns-master`), and the playbooks and
-`inventory/group_vars/` find instances by group rather than by name.
+VM names carry the scenario (`bind-default-ns-master`), and VMIDs are split
+per scenario — default 9210-9212, chroot 9220, geoip 9230, dnstap 9240 —
+so scenarios can run side by side on one lab. Cloud-init names each guest
+after its instance, and the playbooks and `inventory/group_vars/` find
+instances by group rather than by name.
 Every scenario at once, as separate Molecule runs (Molecule's own
-`--workers` only works for collections, not roles):
+`--workers` only works for collections, not roles) — safe because each
+scenario owns its own VMIDs:
 
 ```bash
 for s in default chroot geoip dnstap; do molecule test -s $s > molecule-$s.log 2>&1 & done; wait
 ```
 
-Molecule keeps one state directory per scenario, so running the *same*
-scenario on two releases at once needs a separate one for each run:
-
-```bash
-MOLECULE_EL_VERSION=9 MOLECULE_EPHEMERAL_DIRECTORY=$HOME/.cache/molecule-bind-default-el9 molecule test
-```
-
-Each systemd container holds several inotify instances, and rootless
-containers share their user's limit (`fs.inotify.max_user_instances`,
-128 by default). With many containers up at once, new ones can stop right
-after starting or fail `service_facts`; raise the limit (for example to
-1024) if that happens.
+VMIDs are pinned per scenario, so a scenario is one run at a time on a PVE
+host; to check another guest release, set `LAB_TEMPLATE` and re-run once the
+previous run's `destroy` has removed its clones.
 
 On AlmaLinux 8, the primary's DNSSEC signing and the resolver's dnstap both
 switch those hosts to `bind9.16`, while the secondary stays on the base
@@ -1101,9 +1096,9 @@ BIND 9.11 package, so one run covers both RHEL 8 flavors — `verify.yml`
 checks each host ends up on the expected one. AlmaLinux 8's only Python is
 3.6, which ansible-core 2.17+ can't manage, so
 [`prepare.yml`](molecule/default/prepare.yml) installs Python 3.11 on EL8
-containers first (see **Requirements**). While working on
+guests first (see **Requirements**). While working on
 the tests, `molecule converge` and `molecule verify` run those stages
-without destroying the containers; `molecule destroy` cleans up.
+without destroying the guests; `molecule destroy` removes the clones.
 
 ## Design notes / things deliberately left out
 
