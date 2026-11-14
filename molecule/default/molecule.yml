@@ -1,17 +1,15 @@
 ---
-# Three systemd containers (rootless Podman is fine) on one network,
-# mirroring examples/:
+# Three KVM guests cloned from the lab's AlmaLinux templates, on the
+# lab network, mirroring examples/:
 #   ns-master  DNSSEC-signing primary, role-managed zones
 #   ns-slave   secondary that transfers every zone from it
 #   resolver   caching resolver forwarding example.test to the primary,
 #              with DNS64 and dnstap export
-# Run from the AlmaLinux-10 WSL distro with its rootless Podman.
-# MOLECULE_EL_VERSION picks the AlmaLinux init image (default 10; also
-# 8, 9) — see the README's "Testing" section.
-#
-# Inside containers SELinux is off and firewalld isn't installed, so this
-# exercises the role's skip paths for both. Chroot and GeoIP have their own
-# scenarios (molecule/chroot/, molecule/geoip/).
+# The full AlmaLinux templates run SELinux enforcing with firewalld
+# installed, so the tests exercise the role's SELinux and firewalld paths
+# rather than skip them.
+# LAB_TEMPLATE picks the guest release (template-alma8/9/10, default alma10)
+# — see the README's "Testing" section.
 
 # meta/main.yml has no galaxy namespace; warn rather than fail on it.
 role_name_check: 1
@@ -28,42 +26,38 @@ dependency:
     requirements-file: ${MOLECULE_SCENARIO_DIRECTORY}/requirements.yml
 
 driver:
-  name: podman
+  # Clones full VMs from the templates; the PVE API endpoint and token come
+  # from the secrets file. Everything lab-specific goes through environment
+  # variables — nothing host-, subnet- or credential-shaped lives in here.
+  name: molecule-proxmox
+  options:
+    proxmox_secrets: ${LAB_PROXMOX_SECRETS:-/root/.config/molecule/proxmox-secrets.yml}
+    node: ${LAB_NODE:-pve}
+    validate_certs: false   # the lab's PVE uses its self-signed cert
+    ssh_user: ${LAB_SSH_USER:-labadmin}
+    ssh_identity_file: ${LAB_SSH_KEY:-/root/.ssh/id_ed25519}
+    full: true              # full clones, not linked clones of the template
+    pool: ${LAB_POOL:-testlab}
+    timeout: 300
 
-# Instance names carry the scenario and EL release (bind-<scenario>-el<N>-
-# <host>), so scenarios and releases can run side by side, also next to other
-# projects' containers; inside, each keeps its short hostname. Playbooks and
-# inventory/group_vars/ target the instances by group, not by name.
+# VMIDs are split per scenario — default 9210-9212, chroot 9220, geoip 9230,
+# dnstap 9240 (the private lab scenario keeps 9200-9202) — so scenarios can
+# run side by side, but a scenario is one run at a time. Cloud-init names
+# each VM after its instance name; playbooks and inventory/group_vars/ find
+# instances by group, not by name.
 platforms:
-  - name: bind-default-el${MOLECULE_EL_VERSION:-10}-ns-master
-    hostname: ns-master
+  - name: bind-default-ns-master
     groups: [ns_master]
-    image: "docker.io/almalinux/${MOLECULE_EL_VERSION:-10}-init:latest"
-    pre_build_image: true
-    override_command: false   # keep the image's own CMD: systemd as PID 1
-    systemd: always
-    privileged: true          # lets systemd sandbox services (the dnstap converter)
-    network: bind-default-el${MOLECULE_EL_VERSION:-10}   # created by the driver from the first platform
-
-  - name: bind-default-el${MOLECULE_EL_VERSION:-10}-ns-slave
-    hostname: ns-slave
+    template_name: ${LAB_TEMPLATE:-template-alma10}
+    newid: 9210
+  - name: bind-default-ns-slave
     groups: [ns_slave]
-    image: "docker.io/almalinux/${MOLECULE_EL_VERSION:-10}-init:latest"
-    pre_build_image: true
-    override_command: false
-    systemd: always
-    privileged: true
-    network: bind-default-el${MOLECULE_EL_VERSION:-10}
-
-  - name: bind-default-el${MOLECULE_EL_VERSION:-10}-resolver
-    hostname: resolver
+    template_name: ${LAB_TEMPLATE:-template-alma10}
+    newid: 9211
+  - name: bind-default-resolver
     groups: [resolver]
-    image: "docker.io/almalinux/${MOLECULE_EL_VERSION:-10}-init:latest"
-    pre_build_image: true
-    override_command: false
-    systemd: always
-    privileged: true
-    network: bind-default-el${MOLECULE_EL_VERSION:-10}
+    template_name: ${LAB_TEMPLATE:-template-alma10}
+    newid: 9212
 
 provisioner:
   name: ansible

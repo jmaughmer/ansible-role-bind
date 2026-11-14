@@ -1,6 +1,6 @@
 ---
 # DNSSEC-signing primary with role-managed zones. The A/PTR record values
-# below are just zone data — they don't need to match container addresses.
+# below are just zone data — they don't need to match the guests' addresses.
 bind_dns_role: authoritative
 bind_acls:
   trusted: [127.0.0.1, "::1"]

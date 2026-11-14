@@ -3,10 +3,10 @@
 # actually matches by country: geo.test may only be transferred by clients
 # in GB. prepare.yml installs MaxMind's public GeoLite2-Country *test*
 # database (fixed, documented test networks — no MaxMind account needed)
-# and gives the container one address from a GB test network and one from
-# an SE one; verify.yml then tries AXFR from each.
+# and gives the guest one address from a GB test network and one from an
+# SE one; verify.yml then tries AXFR from each.
 #   molecule test -s geoip
-# MOLECULE_EL_VERSION picks the AlmaLinux release, as in the default scenario.
+# LAB_TEMPLATE picks the guest release, as in the default scenario.
 # geoipupdate itself isn't exercised: it needs real MaxMind credentials.
 role_name_check: 1
 
@@ -16,21 +16,26 @@ dependency:
     requirements-file: ${MOLECULE_SCENARIO_DIRECTORY}/../default/requirements.yml
 
 driver:
-  name: podman
+  # Same lab driver and env variables as the default scenario.
+  name: molecule-proxmox
+  options:
+    proxmox_secrets: ${LAB_PROXMOX_SECRETS:-/root/.config/molecule/proxmox-secrets.yml}
+    node: ${LAB_NODE:-pve}
+    validate_certs: false   # the lab's PVE uses its self-signed cert
+    ssh_user: ${LAB_SSH_USER:-labadmin}
+    ssh_identity_file: ${LAB_SSH_KEY:-/root/.ssh/id_ed25519}
+    full: true
+    pool: ${LAB_POOL:-testlab}
+    timeout: 300
 
-# Instance names carry the scenario and EL release (bind-<scenario>-el<N>-
-# <host>), so scenarios and releases can run side by side, also next to other
-# projects' containers; inside, each keeps its short hostname. Playbooks and
-# inventory/group_vars/ target the instances by group, not by name.
+# VMID 9230 — this scenario's slice of the lab's VMIDs (see the default
+# scenario); one run at a time. Playbooks and inventory/group_vars/ target
+# the instance by group, not by name.
 platforms:
-  - name: bind-geoip-el${MOLECULE_EL_VERSION:-10}-ns-geoip
-    hostname: ns-geoip
+  - name: bind-geoip-ns-geoip
     groups: [ns_geoip]
-    image: "docker.io/almalinux/${MOLECULE_EL_VERSION:-10}-init:latest"
-    pre_build_image: true
-    override_command: false   # keep the image's own CMD: systemd as PID 1
-    systemd: always
-    privileged: true          # lets prepare.yml add the test addresses
+    template_name: ${LAB_TEMPLATE:-template-alma10}
+    newid: 9230
 
 provisioner:
   name: ansible

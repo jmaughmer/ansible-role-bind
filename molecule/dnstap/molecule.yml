@@ -14,7 +14,8 @@
 #   4. on EL8, checks enabling dnstap on base BIND 9.11 fails with its
 #      explanation.
 #   molecule test -s dnstap
-# MOLECULE_EL_VERSION picks the AlmaLinux release, as in the default scenario.
+# LAB_TEMPLATE picks the guest release, as in the default scenario.
+# The shared prepare runs through this scenario's prepare.yml.
 role_name_check: 1
 
 dependency:
@@ -23,26 +24,29 @@ dependency:
     requirements-file: ${MOLECULE_SCENARIO_DIRECTORY}/../default/requirements.yml
 
 driver:
-  name: podman
+  # Same lab driver and env variables as the default scenario.
+  name: molecule-proxmox
+  options:
+    proxmox_secrets: ${LAB_PROXMOX_SECRETS:-/root/.config/molecule/proxmox-secrets.yml}
+    node: ${LAB_NODE:-pve}
+    validate_certs: false   # the lab's PVE uses its self-signed cert
+    ssh_user: ${LAB_SSH_USER:-labadmin}
+    ssh_identity_file: ${LAB_SSH_KEY:-/root/.ssh/id_ed25519}
+    full: true
+    pool: ${LAB_POOL:-testlab}
+    timeout: 300
 
-# Instance names carry the scenario and EL release (bind-<scenario>-el<N>-
-# <host>), so scenarios and releases can run side by side, also next to other
-# projects' containers; inside, each keeps its short hostname. Playbooks and
-# inventory/group_vars/ target the instances by group, not by name.
+# VMID 9240 — this scenario's slice of the lab's VMIDs (see the default
+# scenario); one run at a time. Playbooks and inventory/group_vars/ target
+# the instance by group, not by name.
 platforms:
-  - name: bind-dnstap-el${MOLECULE_EL_VERSION:-10}-ns-dnstap
-    hostname: ns-dnstap
+  - name: bind-dnstap-ns-dnstap
     groups: [ns_dnstap]
-    image: "docker.io/almalinux/${MOLECULE_EL_VERSION:-10}-init:latest"
-    pre_build_image: true
-    override_command: false   # keep the image's own CMD: systemd as PID 1
-    systemd: always
-    privileged: true          # lets systemd sandbox the converter service
+    template_name: ${LAB_TEMPLATE:-template-alma10}
+    newid: 9240
 
 provisioner:
   name: ansible
-  playbooks:
-    prepare: ../default/prepare.yml   # sudo, iproute; Python 3.11 on EL8
   inventory:
     links:
       group_vars: inventory/group_vars/

@@ -1,0 +1,5 @@
+---
+# The lab guests need the shared prepare (SSH wait, lab-network DNS fix, EL8
+# Python); chroot.yml and geoip.yml do the same import.
+- name: Prepare the guests (SSH, lab DNS, EL8 Python)
+  ansible.builtin.import_playbook: ../default/prepare.yml

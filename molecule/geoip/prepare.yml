@@ -1,5 +1,5 @@
 ---
-- name: Install sudo, iproute, and Python 3.11 on EL8 hosts
+- name: Prepare the guests (SSH, lab DNS, EL8 Python)
   ansible.builtin.import_playbook: ../default/prepare.yml
 
 - name: Supply a GeoIP2 database and test client addresses
@@ -24,11 +24,6 @@
         dest: /usr/share/GeoIP/GeoLite2-Country.mmdb
         checksum: "sha256:{{ geoip_test_db_sha256 }}"
         mode: "0644"
-
-    - name: Install iproute for the ip command
-      ansible.builtin.dnf:
-        name: iproute
-        state: present
 
     # Local addresses, so dig -b can send queries from them to 127.0.0.1.
     - name: Add a GB and an SE test address to the loopback interface

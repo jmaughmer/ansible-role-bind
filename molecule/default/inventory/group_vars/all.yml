@@ -1,9 +1,9 @@
 ---
-# Container IPs come from facts rather than being fixed: Podman's Molecule
-# driver can't pin a network's subnet, so addresses are whatever the
-# container network hands out. converge.yml and verify.yml gather facts on
-# every instance first so these resolve on any host. Instances are found by
-# group, since their names carry the scenario and EL release.
+# Guest IPs come from facts rather than being fixed: the lab network hands
+# addresses out over DHCP and nothing pins them, so they are whatever that
+# network gives. converge.yml and verify.yml gather facts on every instance
+# first so these resolve on any lab. Instances are found by group rather
+# than by VM name.
 test_master_ip: "{{ hostvars[groups['ns_master'][0]].ansible_facts.default_ipv4.address }}"
 test_slave_ip: "{{ hostvars[groups['ns_slave'][0]].ansible_facts.default_ipv4.address }}"
 test_resolver_ip: "{{ hostvars[groups['resolver'][0]].ansible_facts.default_ipv4.address }}"

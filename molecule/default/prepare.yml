@@ -1,24 +1,42 @@
 ---
-# The almalinux/N-init images are minimal: no sudo (which become needs) and
-# no iproute (which fact gathering needs for ansible_default_ipv4, how the
-# servers find each other). Install both with raw, which needs no Python on
-# the host.
+# The full AlmaLinux templates already have sudo and iproute, so only the
+# EL8 interpreter gap remains: EL8's default Python 3.6 is refused by current
+# ansible-core on the managed node, so EL8 hosts get Python 3.11 from
+# AppStream first. Real RHEL 8 hosts managed by a current ansible-core need
+# the same (see the README's "Requirements"). raw needs no Python on the
+# target; become is needed because the SSH connection logs in as a sudo user.
 #
-# ansible-core 2.17+ also can't manage hosts whose only Python is 3.6 —
-# RHEL 8's default /usr/bin/python3. On EL8, install Python 3.11 from
-# AppStream too; Ansible's interpreter discovery then picks it over 3.6.
-# Real RHEL 8 hosts managed by a current ansible-core need the same (see the
-# README's "Requirements").
+# This playbook also stands in for the driver's stock prepare (wait +
+# hostname): cloud-init on the clones already names each VM after its
+# instance name before the first SSH connection.
 - name: Prepare
   hosts: all
   gather_facts: false
+  become: true
   tasks:
-    - name: Install sudo, iproute, and Python 3.11 on EL8 hosts
-      # Explicit /bin/sh -c: the podman connection runs raw commands without
-      # a shell, so a bare "if ..." would be taken as a program name.
+    - name: Wait for SSH to be up after first boot
+      ansible.builtin.wait_for_connection:
+
+    # The AlmaLinux cloud templates were first booted on the LAN, so they
+    # carry a stale /etc/resolv.conf (LAN router + home search domain) that
+    # the cloud images never update (NM dns=none; cloud-init owns the
+    # file). On the lab network that means dead DNS: rewrite it from the
+    # DHCP lease.
+    - name: Point resolv.conf at the lab network's DNS from DHCP
+      ansible.builtin.raw: |
+        gw=$(ip -4 route | awk '/default via/ {print $3; exit}')
+        test -n "$gw"
+        dns=""
+        for d in $(nmcli -t -f IP4.DNS device show eth0 | cut -d: -f2); do
+          [ "$d" = "$gw" ] && dns=$d
+        done
+        printf 'nameserver %s\n' "${dns:-$gw}" > /etc/resolv.conf
+      changed_when: true
+
+    - name: Install Python 3.11 on EL8 hosts
       ansible.builtin.raw: >-
-        /bin/sh -c "pkgs='sudo iproute';
-        grep -q ' release 8' /etc/redhat-release && pkgs=\"$pkgs python3.11\";
-        if ! rpm -q --quiet $pkgs; then dnf -y -q install $pkgs && echo installed; fi"
-      register: base_packages
-      changed_when: "'installed' in base_packages.stdout"
+        /bin/sh -c "if grep -q ' release 8' /etc/redhat-release
+        && ! rpm -q --quiet python3.11;
+        then dnf -y -q install python3.11 && echo installed; fi"
+      register: el8_python
+      changed_when: "'installed' in el8_python.stdout"

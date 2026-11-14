@@ -5,5 +5,5 @@ all:
   vars:
     # DS records land in Molecule's scratch directory, not the repository.
     bind_dnssec_ds_output_dir: "{{ lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}/dnssec-ds-records"
-    # Containers can be slow to generate keys on a busy machine.
+    # Guests can be slow to generate keys on a busy lab host.
     bind_dnssec_key_wait_retries: 24

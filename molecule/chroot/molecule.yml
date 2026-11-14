@@ -5,12 +5,7 @@
 # /var/named/chroot, that the role's bind mounts are in place, and that
 # signing, query logging and dnstap all still work through them.
 #   molecule test -s chroot
-# MOLECULE_EL_VERSION picks the AlmaLinux release, as in the default scenario.
-#
-# In a rootless container, named-chroot's setup script can't create the
-# chroot's /dev nodes (mknod isn't allowed in a user namespace), so
-# /var/named/chroot/dev stays empty here, unlike on a real host. named
-# runs fine without them.
+# LAB_TEMPLATE picks the guest release, as in the default scenario.
 role_name_check: 1
 
 dependency:
@@ -19,21 +14,26 @@ dependency:
     requirements-file: ${MOLECULE_SCENARIO_DIRECTORY}/../default/requirements.yml
 
 driver:
-  name: podman
+  # Same lab driver and env variables as the default scenario.
+  name: molecule-proxmox
+  options:
+    proxmox_secrets: ${LAB_PROXMOX_SECRETS:-/root/.config/molecule/proxmox-secrets.yml}
+    node: ${LAB_NODE:-pve}
+    validate_certs: false   # the lab's PVE uses its self-signed cert
+    ssh_user: ${LAB_SSH_USER:-labadmin}
+    ssh_identity_file: ${LAB_SSH_KEY:-/root/.ssh/id_ed25519}
+    full: true
+    pool: ${LAB_POOL:-testlab}
+    timeout: 300
 
-# Instance names carry the scenario and EL release (bind-<scenario>-el<N>-
-# <host>), so scenarios and releases can run side by side, also next to other
-# projects' containers; inside, each keeps its short hostname. Playbooks and
-# inventory/group_vars/ target the instances by group, not by name.
+# VMID 9220 — this scenario's slice of the lab's VMIDs (see the default
+# scenario); one run at a time. Playbooks and inventory/group_vars/ target
+# the instance by group, not by name.
 platforms:
-  - name: bind-chroot-el${MOLECULE_EL_VERSION:-10}-ns-chroot
-    hostname: ns-chroot
+  - name: bind-chroot-ns-chroot
     groups: [ns_chroot]
-    image: "docker.io/almalinux/${MOLECULE_EL_VERSION:-10}-init:latest"
-    pre_build_image: true
-    override_command: false   # keep the image's own CMD: systemd as PID 1
-    systemd: always
-    privileged: true          # named-chroot's setup bind-mounts paths into the chroot
+    template_name: ${LAB_TEMPLATE:-template-alma10}
+    newid: 9220
 
 provisioner:
   name: ansible
