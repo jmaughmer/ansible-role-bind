@@ -4,6 +4,9 @@ examples/collections/
 
 *.retry
 .ansible/
+.cache/
+.molecule/
+.venv/
 .vault_pass*
 vault-password*
 # Exception: the chroot scenario's test-only vault password script
