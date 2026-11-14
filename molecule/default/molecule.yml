@@ -32,7 +32,7 @@ driver:
   name: molecule-proxmox
   options:
     proxmox_secrets: ${LAB_PROXMOX_SECRETS:-/root/.config/molecule/proxmox-secrets.yml}
-    node: ${LAB_NODE:-pve}
+    node: ${LAB_NODE:-galactica}
     validate_certs: false   # the lab's PVE uses its self-signed cert
     ssh_user: ${LAB_SSH_USER:-labadmin}
     ssh_identity_file: ${LAB_SSH_KEY:-/root/.ssh/id_ed25519}
@@ -40,24 +40,26 @@ driver:
     pool: ${LAB_POOL:-testlab}
     timeout: 300
 
-# VMIDs are split per scenario — default 9210-9212, chroot 9220, geoip 9230,
-# dnstap 9240 (the private lab scenario keeps 9200-9202) — so scenarios can
-# run side by side, but a scenario is one run at a time. Cloud-init names
-# each VM after its instance name; playbooks and inventory/group_vars/ find
-# instances by group, not by name.
+# VMIDs come from LAB_VMID_N — default 9200-9202, chroot 9203, geoip 9204,
+# dnstap 9205 — bind's slice of the lab band map, so scenarios run side by
+# side and a plain molecule test keeps its own VMs. The lab's `mlab` runner
+# claims a free band per run (exporting LAB_VMID / LAB_VMID_0..2), which is
+# what makes several runs of one scenario possible at the same time.
+# Cloud-init names each VM after its instance name; playbooks and
+# inventory/group_vars/ find instances by group, not by name.
 platforms:
   - name: bind-default-ns-master
     groups: [ns_master]
     template_name: ${LAB_TEMPLATE:-template-alma10}
-    newid: 9210
+    newid: ${LAB_VMID_0:-9200}
   - name: bind-default-ns-slave
     groups: [ns_slave]
     template_name: ${LAB_TEMPLATE:-template-alma10}
-    newid: 9211
+    newid: ${LAB_VMID_1:-9201}
   - name: bind-default-resolver
     groups: [resolver]
     template_name: ${LAB_TEMPLATE:-template-alma10}
-    newid: 9212
+    newid: ${LAB_VMID_2:-9202}
 
 provisioner:
   name: ansible

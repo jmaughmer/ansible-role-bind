@@ -26,8 +26,8 @@ forwarders) applies to both and is controlled independently.
   With the second route, check SELinux-enforcing hosts separately: the
   SELinux modules this role uses need Python SELinux bindings, which RHEL 8
   ships for its 3.6 platform Python. The Molecule tests install Python 3.11
-  on EL8 containers this way, but containers run with SELinux off, so they
-  don't cover that combination.
+   on EL8 guests this way, and the lab runs SELinux enforcing, so
+   `LAB_TEMPLATE=template-alma8 molecule test` covers that combination.
 - For DNSSEC signing (`bind_dnssec_enable_signing: true`): BIND 9.16+.
   RHEL 9+'s base `bind` package already is; on RHEL 8 (base `bind` is 9.11)
   the role automatically switches to the `bind9.16` AppStream package
@@ -977,7 +977,7 @@ them.
 
 The servers find
 each other through gathered facts rather than fixed addresses, so the
-container network's subnet doesn't matter.
+labnet addresses DHCP hands out don't matter.
 
 [`molecule/chroot/`](molecule/chroot/) covers chroot with one server,
 switched the way an existing host would be: `prepare.yml` deploys the
@@ -989,14 +989,12 @@ role with chroot off, then converge turns it on. `verify.yml` checks that
 dnstap all work from inside the chroot. The same switch replaces the
 generated rndc key with a supplied, vault-encrypted one (decrypted with
 the test-only `vault-password.sh`), and `verify.yml` checks `rndc` still
-controls the chrooted `named` with it. In a rootless container,
-`named-chroot`'s setup can't create the chroot's `/dev` device nodes, so
-that one detail differs from a real host; `named` runs fine without them.
+controls the chrooted `named` with it.
 
 [`molecule/geoip/`](molecule/geoip/) checks that GeoIP ACLs really match
 by country. `prepare.yml` installs MaxMind's public GeoLite2-Country *test*
 database (pinned to a commit and checksum; no MaxMind account needed) and
-gives the container one address from a GB test network and one from an SE
+gives the guest one address from a GB test network and one from an SE
 network. A zone whose `allow_transfer_acl` is `geoip country GB` must then
 transfer to the GB address and refuse the SE and loopback addresses.
 `geoipupdate` itself isn't exercised, since it needs real MaxMind
@@ -1037,11 +1035,13 @@ things:
 4. **EL8 only.** It checks that enabling dnstap on the base BIND 9.11
    fails with its explanation.
 
-Requirements: a Proxmox VE host the control machine can reach, and the
+Requirements: the lab's molecule control machine (the Test Lab project's
+`molecule-labnet/` directory documents the lab itself) and the
 Python packages in [`molecule/requirements.txt`](molecule/requirements.txt).
 Everything lab-specific is environment variables: `LAB_PROXMOX_SECRETS`
 (the PVE API token file; default `/root/.config/molecule/proxmox-secrets.yml`),
-`LAB_NODE`, `LAB_SSH_USER` and `LAB_SSH_KEY` (the SSH account the playbooks
+`LAB_NODE` (default `galactica`), `LAB_SSH_USER` and `LAB_SSH_KEY` (the SSH
+account the playbooks
 become from), and `LAB_TEMPLATE` for the guest release — `template-alma8`,
 `template-alma9` or `template-alma10` (default):
 
@@ -1073,8 +1073,9 @@ molecule test -s geoip
 molecule test -s dnstap
 ```
 
-VM names carry the scenario (`bind-default-ns-master`), and VMIDs are split
-per scenario — default 9210-9212, chroot 9220, geoip 9230, dnstap 9240 —
+VM names carry the scenario (`bind-default-ns-master`), and VMIDs come from
+`LAB_VMID` / `LAB_VMID_0..2` and split per scenario — default 9200-9202,
+chroot 9203, geoip 9204, dnstap 9205 —
 so scenarios can run side by side on one lab. Cloud-init names each guest
 after its instance, and the playbooks and `inventory/group_vars/` find
 instances by group rather than by name.
@@ -1086,9 +1087,16 @@ scenario owns its own VMIDs:
 for s in default chroot geoip dnstap; do molecule test -s $s > molecule-$s.log 2>&1 & done; wait
 ```
 
-VMIDs are pinned per scenario, so a scenario is one run at a time on a PVE
-host; to check another guest release, set `LAB_TEMPLATE` and re-run once the
-previous run's `destroy` has removed its clones.
+A scenario's VMIDs are its pinned defaults, so a plain `molecule test -s …`
+of one scenario is one run at a time on a PVE host; to check another guest
+release, set `LAB_TEMPLATE` and re-run once the previous run's `destroy` has
+removed its clones. For several runs of the same scenario at once, use the
+lab's `mlab` wrapper, which claims a free VMID band (and an isolated
+ephemeral directory) per run:
+
+```bash
+/root/labnet/mlab test -s default               # parallel-safe run on the control machine
+```
 
 On AlmaLinux 8, the primary's DNSSEC signing and the resolver's dnstap both
 switch those hosts to `bind9.16`, while the secondary stays on the base

@@ -28,7 +28,7 @@ driver:
   name: molecule-proxmox
   options:
     proxmox_secrets: ${LAB_PROXMOX_SECRETS:-/root/.config/molecule/proxmox-secrets.yml}
-    node: ${LAB_NODE:-pve}
+    node: ${LAB_NODE:-galactica}
     validate_certs: false   # the lab's PVE uses its self-signed cert
     ssh_user: ${LAB_SSH_USER:-labadmin}
     ssh_identity_file: ${LAB_SSH_KEY:-/root/.ssh/id_ed25519}
@@ -36,14 +36,15 @@ driver:
     pool: ${LAB_POOL:-testlab}
     timeout: 300
 
-# VMID 9240 — this scenario's slice of the lab's VMIDs (see the default
-# scenario); one run at a time. Playbooks and inventory/group_vars/ target
+# VMID 9205 (LAB_VMID) — bind's band continues 9200-9205 across scenarios
+# (see the default scenario); a plain molecule test uses the pinned VMID,
+# mlab claims a free one per run. Playbooks and inventory/group_vars/ target
 # the instance by group, not by name.
 platforms:
   - name: bind-dnstap-ns-dnstap
     groups: [ns_dnstap]
     template_name: ${LAB_TEMPLATE:-template-alma10}
-    newid: 9240
+    newid: ${LAB_VMID:-9205}
 
 provisioner:
   name: ansible
