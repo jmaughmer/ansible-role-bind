@@ -32,7 +32,7 @@ driver:
     validate_certs: false   # the lab's PVE uses its self-signed cert
     ssh_user: ${LAB_SSH_USER:-labadmin}
     ssh_identity_file: ${LAB_SSH_KEY:-/root/.ssh/id_ed25519}
-    full: true
+    full: ${LAB_FULL:-true}
     pool: ${LAB_POOL:-testlab}
     timeout: 300
 
