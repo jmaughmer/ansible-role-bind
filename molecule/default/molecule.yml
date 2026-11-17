@@ -33,12 +33,12 @@ driver:
   options:
     proxmox_secrets: ${LAB_PROXMOX_SECRETS:-/root/.config/molecule/proxmox-secrets.yml}
     node: ${LAB_NODE:-galactica}
-    validate_certs: false   # the lab's PVE uses its self-signed cert
+    validate_certs: true    # galactica serves a valid Let's Encrypt cert (ACME) on its FQDN
     ssh_user: ${LAB_SSH_USER:-labadmin}
     ssh_identity_file: ${LAB_SSH_KEY:-/root/.ssh/id_ed25519}
     full: true              # full clones, not linked clones of the template
     pool: ${LAB_POOL:-testlab}
-    timeout: 300
+    timeout: ${LAB_TIMEOUT:-300}
 
 # VMIDs come from LAB_VMID_N — default 9200-9202, chroot 9203, geoip 9204,
 # dnstap 9205 — bind's slice of the lab band map, so scenarios run side by
