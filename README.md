@@ -1041,9 +1041,11 @@ Python packages in [`molecule/requirements.txt`](molecule/requirements.txt).
 Everything lab-specific is environment variables: `LAB_PROXMOX_SECRETS`
 (the PVE API token file; default `/root/.config/molecule/proxmox-secrets.yml`),
 `LAB_NODE` (default `galactica`), `LAB_SSH_USER` and `LAB_SSH_KEY` (the SSH
-account the playbooks
-become from), and `LAB_TEMPLATE` for the guest release — `template-alma8`,
-`template-alma9` or `template-alma10` (default):
+account the playbooks become from), `LAB_TEMPLATE` for the guest release —
+`template-alma8`, `template-alma9` or `template-alma10` (default) — plus
+`LAB_POOL` (default `testlab`), `LAB_FULL` (default `true`: full clones rather
+than linked clones of the template) and `LAB_TIMEOUT` (seconds to wait for a
+guest, default `300`):
 
 ```bash
 pip install -r molecule/requirements.txt
