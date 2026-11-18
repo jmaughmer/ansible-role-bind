@@ -36,7 +36,7 @@ driver:
     validate_certs: true    # galactica serves a valid Let's Encrypt cert (ACME) on its FQDN
     ssh_user: ${LAB_SSH_USER:-labadmin}
     ssh_identity_file: ${LAB_SSH_KEY:-/root/.ssh/id_ed25519}
-    full: true              # full clones, not linked clones of the template
+    full: ${LAB_FULL:-true}  # full clones, not linked clones of the template
     pool: ${LAB_POOL:-testlab}
     timeout: ${LAB_TIMEOUT:-300}
 

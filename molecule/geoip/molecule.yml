@@ -21,12 +21,12 @@ driver:
   options:
     proxmox_secrets: ${LAB_PROXMOX_SECRETS:-/root/.config/molecule/proxmox-secrets.yml}
     node: ${LAB_NODE:-galactica}
-    validate_certs: false   # the lab's PVE uses its self-signed cert
+    validate_certs: true    # galactica serves a valid Let's Encrypt cert (ACME) on its FQDN
     ssh_user: ${LAB_SSH_USER:-labadmin}
     ssh_identity_file: ${LAB_SSH_KEY:-/root/.ssh/id_ed25519}
     full: ${LAB_FULL:-true}
     pool: ${LAB_POOL:-testlab}
-    timeout: 300
+    timeout: ${LAB_TIMEOUT:-300}
 
 # VMID 9204 (LAB_VMID) — bind's band continues 9200-9205 across scenarios
 # (see the default scenario); a plain molecule test uses the pinned VMID,
