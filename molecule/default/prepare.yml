@@ -17,6 +17,27 @@
     - name: Wait for SSH to be up after first boot
       ansible.builtin.wait_for_connection:
 
+    # The lab templates ship cloud-init's package_update_upgrade_install, so a
+    # fresh clone spends its first minutes running `dnf -y upgrade`. dnf takes
+    # its lock only after resolving, so a prepare task that resolves during that
+    # upgrade plans against the pre-upgrade rpmdb and then reaches for rpms the
+    # upgrade has already installed and deleted, dying with [Errno 2] on a
+    # /var/cache/dnf/*/packages path. Wait for cloud-init's boot work (which also
+    # owns resolv.conf) before doing anything else to the guest.
+    - name: Wait for cloud-init to finish its boot-time work
+      ansible.builtin.raw: |
+        for i in $(seq 1 120); do
+          state=$(cloud-init status 2>/dev/null | sed -n 's/^status: //p')
+          case "$state" in
+            done) exit 0 ;;
+            error) echo 'cloud-init reported an error' >&2; exit 1 ;;
+          esac
+          sleep 5
+        done
+        echo 'cloud-init still running after 10 minutes' >&2
+        exit 1
+      changed_when: false
+
     # The AlmaLinux cloud templates were first booted on the LAN, so they
     # carry a stale /etc/resolv.conf (LAN router + home search domain) that
     # the cloud images never update (NM dns=none; cloud-init owns the
@@ -40,3 +61,16 @@
         then dnf -y -q install python3.11 && echo installed; fi"
       register: el8_python
       changed_when: "'installed' in el8_python.stdout"
+
+    # Labnet DNS can hiccup while several VMs boot at once, which used to kill
+    # a first dnf call (Curl error 6), and the templates ship metadata whose
+    # cached rpms have since been purged, so a later install dies with
+    # "No such file or directory" on a /var/cache/dnf/.../packages path. Prime
+    # name resolution and metadata here, with bounded retries, so the role's
+    # dnf calls resolve against a cache that matches what is downloadable.
+    - name: Prime DNS and dnf metadata
+      ansible.builtin.raw: >-
+        /bin/sh -c "for i in 1 2 3 4 5; do
+        if getent hosts mirrors.almalinux.org && dnf -y -q makecache;
+        then exit 0; fi; sleep 10; done; exit 1"
+      changed_when: false
